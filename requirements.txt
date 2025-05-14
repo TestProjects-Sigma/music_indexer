@@ -1,0 +1,12 @@
+# Core dependencies
+mutagen>=1.45.1        # Audio metadata extraction
+fuzzywuzzy>=0.18.0     # Fuzzy string matching
+python-Levenshtein>=0.12.2  # Speed up fuzzywuzzy
+PyQt5>=5.15.4          # GUI framework
+tqdm>=4.62.3           # Progress bars
+pillow>=9.0.0          # Image processing (for album art)
+
+# Development dependencies
+pytest>=6.2.5          # Testing
+black>=21.9b0          # Code formatting
+flake8>=3.9.2          # Linting
