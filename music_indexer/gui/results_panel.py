@@ -2,13 +2,16 @@
 Results panel GUI for the music indexer application.
 """
 import os
+import sys
+import subprocess
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMessageBox, QProgressDialog, QCheckBox
+    QFileDialog, QMessageBox, QProgressDialog, QCheckBox,
+    QMenu
 )
 from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QCursor
 
 from ..utils.logger import get_logger
 
@@ -32,6 +35,9 @@ class ResultsPanel(QWidget):
         self.load_settings()
         
         logger.info("Results panel initialized")
+        
+        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.results_table.customContextMenuRequested.connect(self.show_context_menu)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -48,6 +54,8 @@ class ResultsPanel(QWidget):
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.results_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.results_table.setAlternatingRowColors(True)
+        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)  # Enable custom context menu
+        self.results_table.customContextMenuRequested.connect(self.show_context_menu)  # Connect signal
         
         # Set column widths
         header = self.results_table.horizontalHeader()
@@ -101,6 +109,159 @@ class ResultsPanel(QWidget):
         
         # Connect signals
         self.results_table.itemSelectionChanged.connect(self.update_button_states)
+    
+    def show_context_menu(self, position):
+        """Show context menu when right-clicking on a result item."""
+        # Check if there are any items in the table
+        if self.results_table.rowCount() == 0:
+            return
+            
+        # Get selected items
+        selected_indexes = self.results_table.selectedIndexes()
+        if not selected_indexes:
+            # If no selection, select row under cursor
+            row = self.results_table.rowAt(position.y())
+            if row >= 0:
+                self.results_table.selectRow(row)
+            else:
+                return
+        
+        # Create context menu
+        context_menu = QMenu(self)
+        
+        # Add actions
+        show_action = context_menu.addAction("Show in Folder")
+        copy_action = context_menu.addAction("Copy to Export Folder")
+        context_menu.addSeparator()
+        export_action = context_menu.addAction("Export Results")
+        
+        # Get default export directory for quick copy
+        default_export_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        
+        # Connect actions
+        show_action.triggered.connect(self.show_in_folder)
+        
+        if default_export_dir:
+            # If default export directory exists, enable direct copy
+            folder_name = os.path.basename(default_export_dir)
+            if folder_name:
+                copy_action.setText(f"Copy to Export Folder ({folder_name})")
+            copy_action.triggered.connect(lambda: self.copy_to_export_folder(default_export_dir))
+        else:
+            # Otherwise, use standard copy dialog
+            copy_action.triggered.connect(self.copy_to_folder)
+        
+        export_action.triggered.connect(self.export_results)
+        
+        # Show context menu
+        context_menu.exec_(QCursor.pos())
+    
+    def copy_to_export_folder(self, export_dir):
+        """Copy selected files directly to the configured export folder."""
+        file_paths = self.get_selected_file_paths()
+        
+        if not file_paths:
+            return
+            
+        # Check if export directory exists
+        if not os.path.exists(export_dir):
+            try:
+                os.makedirs(export_dir)
+                logger.info(f"Created export directory: {export_dir}")
+            except Exception as e:
+                logger.error(f"Failed to create export directory: {str(e)}")
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"Failed to create export directory:\n{export_dir}\n\nError: {str(e)}"
+                )
+                return
+        
+        # Create progress dialog (non-modal)
+        from PyQt5.QtCore import QTimer
+        
+        self.copy_progress = QProgressDialog("Preparing to copy files...", "Cancel", 0, 100, self)
+        self.copy_progress.setWindowTitle("Copying")
+        self.copy_progress.setWindowModality(Qt.NonModal)  # Make non-modal
+        self.copy_progress.setMinimumDuration(0)
+        self.copy_progress.setAutoClose(True)
+        self.copy_progress.setAutoReset(False)
+        
+        # Use direct copy operation instead of async method for more reliability
+        try:
+            # Get total size for progress reporting
+            total_files = len(file_paths)
+            self.copy_progress.setMaximum(total_files)
+            self.copy_progress.setValue(0)
+            self.copy_progress.show()
+            
+            # Create a QTimer to handle copy operations without blocking UI
+            self.copy_timer = QTimer()
+            self.copy_index = 0
+            self.file_paths = file_paths
+            self.export_dir = export_dir
+            self.copy_success_count = 0
+            self.copy_failed_files = {}
+            
+            # Connect timer to copy next file
+            self.copy_timer.timeout.connect(self.copy_next_file)
+            self.copy_timer.start(10)  # Start timer
+        except Exception as e:
+            logger.error(f"Error starting copy operation: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Copy Failed",
+                f"Error starting copy operation: {str(e)}"
+            )
+
+    def copy_next_file(self):
+        """Copy the next file in the queue."""
+        # Check if we're done
+        if self.copy_index >= len(self.file_paths):
+            self.copy_timer.stop()
+            self.copy_completed(self.copy_success_count, self.copy_failed_files)
+            return
+            
+        # Get current file path
+        src_path = self.file_paths[self.copy_index]
+        
+        try:
+            # Get filename
+            filename = os.path.basename(src_path)
+            dest_path = os.path.join(self.export_dir, filename)
+            
+            # Update progress dialog
+            self.copy_progress.setLabelText(f"Copying {self.copy_index + 1} of {len(self.file_paths)}: {filename}")
+            
+            # Check if destination file already exists
+            if os.path.exists(dest_path):
+                # Append number to filename to make it unique
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while os.path.exists(dest_path):
+                    dest_path = os.path.join(self.export_dir, f"{base} ({counter}){ext}")
+                    counter += 1
+            
+            # Copy file
+            with open(src_path, 'rb') as src_file:
+                with open(dest_path, 'wb') as dest_file:
+                    dest_file.write(src_file.read())
+            
+            self.copy_success_count += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to copy file {src_path}: {str(e)}")
+            self.copy_failed_files[src_path] = str(e)
+        
+        # Update progress
+        self.copy_index += 1
+        self.copy_progress.setValue(self.copy_index)
+        
+        # Check if canceled
+        if self.copy_progress.wasCanceled():
+            self.copy_timer.stop()
+            self.copy_completed(self.copy_success_count, self.copy_failed_files)
+            return
     
     def set_results(self, results):
         """Set search results."""
