@@ -56,6 +56,7 @@ class ResultsPanel(QWidget):
         self.results_tree.customContextMenuRequested.connect(self.show_context_menu)
         self.results_tree.itemExpanded.connect(self.on_item_expanded)
         self.results_tree.itemCollapsed.connect(self.on_item_collapsed)
+        self.results_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
         
         # Set column widths
         header = self.results_tree.header()
@@ -398,6 +399,7 @@ class ResultsPanel(QWidget):
         if is_file_item:
             # File item menu
             show_action = context_menu.addAction("Show in Folder")
+            play_action = context_menu.addAction("Play Audio")
             copy_action = context_menu.addAction("Copy to Export Folder")
             
             # Get default export directory for quick copy
@@ -405,6 +407,7 @@ class ResultsPanel(QWidget):
             
             # Connect actions
             show_action.triggered.connect(self.show_in_folder)
+            play_action.triggered.connect(lambda: self.play_audio_file(item.data(0, Qt.UserRole + 1)))
             
             if default_export_dir:
                 # If default export directory exists, enable direct copy
@@ -820,3 +823,38 @@ class ResultsPanel(QWidget):
         """Handle panel close event."""
         self.save_settings()
         super().closeEvent(event)
+
+    def play_audio_file(self, file_path):
+        """Play an audio file using the system's default audio player."""
+        if not os.path.exists(file_path):
+            QMessageBox.warning(
+                self,
+                "File Not Found",
+                f"The file no longer exists at the specified location:\n{file_path}"
+            )
+            return
+        
+        logger.info(f"Playing audio file: {file_path}")
+        
+        try:
+            if os.name == 'nt':  # Windows
+                os.startfile(file_path)
+            elif os.name == 'posix':  # macOS and Linux
+                if sys.platform == 'darwin':  # macOS
+                    subprocess.run(['open', file_path])
+                else:  # Linux
+                    subprocess.run(['xdg-open', file_path])
+            
+        except Exception as e:
+            logger.error(f"Error playing audio file: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Could not play file: {str(e)}\nFile path: {file_path}"
+            )
+    def on_item_double_clicked(self, item, column):
+        """Handle double-click on an item."""
+        # Check if this is a file item (not a group header)
+        file_path = item.data(0, Qt.UserRole + 1)
+        if file_path:
+            self.play_audio_file(file_path)

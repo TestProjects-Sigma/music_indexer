@@ -14,6 +14,39 @@ A Python application for indexing and searching large music collections, with su
 - **File Operations**: Copy matched files to a selected directory.
 - **Cache System**: Fast indexing with SQLite-based caching of file metadata.
 
+## Grouped Results View
+The Results panel now includes a hierarchical grouped view for automatic searches from text files:
+
+- **Organized Results**: Files are grouped by their source entry in the text file
+- **Status Indicators**: 
+  - ✓ Green "Found" for entries with exactly one match
+  - ⚠ Orange "Multiple" for entries with multiple matches (showing the count)
+  - ❌ Red "Missing" for entries with no matches
+- **Expandable Groups**: Each entry can be expanded or collapsed to show/hide matching files
+- **Group Operations**: Right-click context menu allows expanding or collapsing all groups
+
+## Right-Click Menu Enhancements
+The results panel now includes a fully-featured right-click context menu:
+
+- **Copy to Export Folder**: Copy selected files directly to the configured export directory
+- **Show in Folder**: Open the file's location in your system's file explorer
+- **Play Audio**: Play the selected audio file with your system's default audio player
+- **Export Results**: Export all results to a CSV file
+
+## Audio Playback
+Audio files can now be played directly from the results panel:
+
+- **Double-Click Playback**: Double-click any file in the results to play it with your system's default audio player
+- **Play from Menu**: Right-click on a file and select "Play Audio" to listen to it
+- **Multiple File Support**: Select and play different audio formats including MP3, FLAC, M4A, AAC, and WAV
+
+## Enhanced Search Results
+The automatic search feature now provides better visibility:
+
+- **Missing Track Detection**: Clearly see which entries from your text file have no matching files
+- **Match Statistics**: View counts of found, missing, and multiple matches in the status bar
+- **Enhanced CSV Export**: Export results with hierarchical information including match status
+
 ## Requirements
 
 - Python 3.6+
