@@ -113,7 +113,7 @@ class AutoSearch:
             show_progress (bool): Whether to show progress bar
         
         Returns:
-            list: List of results for each line
+            list: List of results for each line containing line, artist, title, matches
         """
         # Load pairs from match file
         pairs = self._load_match_file(file_path)
@@ -139,6 +139,8 @@ class AutoSearch:
             # Find matches
             matches = self._find_matches_for_pair(artist, title, all_files)
             
+            # Create result dictionary for each line
+            # This format is specifically designed for the grouped results view
             results.append({
                 'line_num': line_num,
                 'line': line,

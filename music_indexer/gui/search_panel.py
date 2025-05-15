@@ -320,17 +320,16 @@ class SearchPanel(QWidget):
             self.auto_progress.close()
         
         if results:
-            # Flatten results to get all matches
-            all_matches = []
-            for result in results:
-                all_matches.extend(result.get('matches', []))
+            # Emit results directly - now our ResultsPanel knows how to handle this format
+            self.search_completed.emit(results)
             
-            # Emit results
-            self.search_completed.emit(all_matches)
+            # Count matches
+            total_matches = sum(len(result.get('matches', [])) for result in results)
+            missing_entries = sum(1 for result in results if not result.get('matches', []))
             
             logger.info(
                 f"Automatic search completed: processed {len(results)} entries, "
-                f"found {len(all_matches)} matches"
+                f"found {total_matches} matches, {missing_entries} entries with no matches"
             )
             
             # Show summary
@@ -338,7 +337,8 @@ class SearchPanel(QWidget):
                 self,
                 "Processing Complete",
                 f"Processed {len(results)} entries from match file.\n"
-                f"Found {len(all_matches)} matching files."
+                f"Found {total_matches} matching files.\n"
+                f"Entries with no matches: {missing_entries}"
             )
         else:
             QMessageBox.warning(

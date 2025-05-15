@@ -1,17 +1,17 @@
 """
-Results panel GUI for the music indexer application.
+Results panel GUI with grouped results for the music indexer application.
 """
 import os
 import sys
 import subprocess
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMessageBox, QProgressDialog, QCheckBox,
-    QMenu
+    QMenu, QStyle
 )
 from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QColor, QCursor
+from PyQt5.QtGui import QColor, QCursor, QIcon, QBrush
 
 from ..utils.logger import get_logger
 
@@ -27,6 +27,7 @@ class ResultsPanel(QWidget):
         
         self.music_indexer = music_indexer
         self.current_results = []
+        self.grouped_results = {}  # Dictionary to store grouped results
         
         # Set up UI
         self.init_ui()
@@ -35,31 +36,30 @@ class ResultsPanel(QWidget):
         self.load_settings()
         
         logger.info("Results panel initialized")
-        
-        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.results_table.customContextMenuRequested.connect(self.show_context_menu)
     
     def init_ui(self):
         """Initialize the user interface."""
         # Create main layout
         main_layout = QVBoxLayout(self)
         
-        # Create results table
-        self.results_table = QTableWidget(0, 7)
-        self.results_table.setHorizontalHeaderLabels([
-            "Filename", "Artist", "Title", "Format", "Duration", "Bitrate", "Match Score"
+        # Create results tree
+        self.results_tree = QTreeWidget()
+        self.results_tree.setColumnCount(7)
+        self.results_tree.setHeaderLabels([
+            "Source/Filename", "Artist", "Title", "Format", "Duration", "Bitrate", "Match Score"
         ])
         
-        # Set table properties
-        self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.results_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.results_table.setAlternatingRowColors(True)
-        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)  # Enable custom context menu
-        self.results_table.customContextMenuRequested.connect(self.show_context_menu)  # Connect signal
+        # Set tree properties
+        self.results_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.results_tree.setAlternatingRowColors(True)
+        self.results_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.results_tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.results_tree.itemExpanded.connect(self.on_item_expanded)
+        self.results_tree.itemCollapsed.connect(self.on_item_collapsed)
         
         # Set column widths
-        header = self.results_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Filename
+        header = self.results_tree.header()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Source/Filename
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Artist
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Title
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Format
@@ -67,11 +67,8 @@ class ResultsPanel(QWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Bitrate
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Match Score
         
-        # Enable sorting
-        self.results_table.setSortingEnabled(True)
-        
-        # Add table to layout
-        main_layout.addWidget(self.results_table)
+        # Add tree to layout
+        main_layout.addWidget(self.results_tree)
         
         # Create status label
         self.status_label = QLabel("No results to display")
@@ -108,53 +105,359 @@ class ResultsPanel(QWidget):
         main_layout.addLayout(button_layout)
         
         # Connect signals
-        self.results_table.itemSelectionChanged.connect(self.update_button_states)
+        self.results_tree.itemSelectionChanged.connect(self.update_button_states)
+    
+    def on_item_expanded(self, item):
+        """Handle item expansion."""
+        # Store expanded state
+        key = item.data(0, Qt.UserRole)
+        if key:
+            settings = QSettings("MusicIndexer", "MusicIndexer")
+            expanded_items = settings.value("results/expanded_items", [])
+            if key not in expanded_items:
+                expanded_items.append(key)
+            settings.setValue("results/expanded_items", expanded_items)
+    
+    def on_item_collapsed(self, item):
+        """Handle item collapse."""
+        # Store collapsed state
+        key = item.data(0, Qt.UserRole)
+        if key:
+            settings = QSettings("MusicIndexer", "MusicIndexer")
+            expanded_items = settings.value("results/expanded_items", [])
+            if key in expanded_items:
+                expanded_items.remove(key)
+            settings.setValue("results/expanded_items", expanded_items)
+    
+    def set_results(self, results):
+        """Set search results."""
+        self.current_results = results
+        
+        # Check if results are from auto_search (containing 'line' field)
+        self.is_auto_search = any(
+            isinstance(r, dict) and 'line' in r and 'matches' in r 
+            for r in results
+        )
+        
+        if self.is_auto_search:
+            self.grouped_results = {}
+            # Group results by source line
+            for result in results:
+                line = result.get('line', '')
+                artist = result.get('artist', '')
+                title = result.get('title', '')
+                matches = result.get('matches', [])
+                
+                key = f"{line}"
+                self.grouped_results[key] = {
+                    'line': line,
+                    'artist': artist,
+                    'title': title,
+                    'matches': matches,
+                    'line_num': result.get('line_num', 0)
+                }
+            
+            self.display_grouped_results()
+        else:
+            # Regular search results
+            self.display_flat_results()
+    
+    def display_grouped_results(self):
+        """Display grouped search results in the tree."""
+        # Clear tree
+        self.results_tree.clear()
+        
+        if not self.grouped_results:
+            self.status_label.setText("No results to display")
+            self.update_button_states()
+            return
+        
+        # Load expanded state
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        expanded_items = settings.value("results/expanded_items", [])
+        
+        # Populate tree with grouped results
+        missing_count = 0
+        total_matches = 0
+        
+        # Sort by line number
+        sorted_groups = sorted(
+            self.grouped_results.items(), 
+            key=lambda x: x[1].get('line_num', 0)
+        )
+        
+        for key, group_data in sorted_groups:
+            line = group_data.get('line', '')
+            artist = group_data.get('artist', '')
+            title = group_data.get('title', '')
+            matches = group_data.get('matches', [])
+            match_count = len(matches)
+            
+            # Create parent item for the group
+            parent_item = QTreeWidgetItem(self.results_tree)
+            
+            # Store line info in the item's user data
+            parent_item.setData(0, Qt.UserRole, key)
+            
+            # Set item text
+            if match_count == 0:
+                status_text = "❌ Missing"
+                missing_count += 1
+                # Red color for missing
+                parent_item.setForeground(0, QBrush(QColor(200, 0, 0)))
+            else:
+                if match_count == 1:
+                    status_text = "✓ Found"
+                    # Green color for found
+                    parent_item.setForeground(0, QBrush(QColor(0, 128, 0)))
+                else:
+                    status_text = f"⚠ Multiple ({match_count})"
+                    # Orange color for multiple
+                    parent_item.setForeground(0, QBrush(QColor(255, 140, 0)))
+                
+                total_matches += match_count
+            
+            # Set display text for parent item
+            parent_item.setText(0, f"{status_text}: {line}")
+            parent_item.setText(1, artist)
+            parent_item.setText(2, title)
+            
+            # Add matches as child items
+            for match in matches:
+                file_path = match.get('file_path', '')
+                filename = os.path.basename(file_path)
+                
+                child_item = QTreeWidgetItem(parent_item)
+                child_item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
+                
+                child_item.setText(0, filename)
+                child_item.setText(1, match.get('artist', ''))
+                child_item.setText(2, match.get('title', ''))
+                child_item.setText(3, match.get('format', ''))
+                
+                # Duration
+                duration = match.get('duration', 0)
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
+                duration_text = f"{minutes}:{seconds:02d}"
+                child_item.setText(4, duration_text)
+                
+                # Bitrate
+                bitrate = match.get('bitrate', 0)
+                child_item.setText(5, f"{bitrate} kbps")
+                
+                # Match score
+                score = match.get('combined_score', 0)
+                child_item.setText(6, f"{score:.1f}%")
+                
+                # Color code match score
+                if score >= 90:
+                    child_item.setBackground(6, QColor(200, 255, 200))  # Light green
+                elif score >= 80:
+                    child_item.setBackground(6, QColor(220, 255, 220))  # Lighter green
+                elif score >= 70:
+                    child_item.setBackground(6, QColor(255, 255, 200))  # Light yellow
+                else:
+                    child_item.setBackground(6, QColor(255, 220, 220))  # Light red
+            
+            # Restore expanded state
+            if key in expanded_items:
+                parent_item.setExpanded(True)
+            elif match_count > 0:
+                # By default, expand if there are matches
+                parent_item.setExpanded(True)
+        
+        # Update status
+        total_groups = len(self.grouped_results)
+        found_groups = total_groups - missing_count
+        
+        self.status_label.setText(
+            f"Displaying {total_groups} search entries: "
+            f"{found_groups} found ({total_matches} total matches), "
+            f"{missing_count} missing"
+        )
+        
+        # Update button states
+        self.update_button_states()
+    
+    def display_flat_results(self):
+        """Display regular (non-grouped) search results in the tree."""
+        # Clear tree
+        self.results_tree.clear()
+        
+        if not self.current_results:
+            self.status_label.setText("No results to display")
+            self.update_button_states()
+            return
+        
+        # Populate tree with flat results
+        for result in self.current_results:
+            file_path = result.get('file_path', '')
+            filename = os.path.basename(file_path)
+            
+            item = QTreeWidgetItem(self.results_tree)
+            item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
+            
+            item.setText(0, filename)
+            item.setText(1, result.get('artist', ''))
+            item.setText(2, result.get('title', ''))
+            item.setText(3, result.get('format', ''))
+            
+            # Duration
+            duration = result.get('duration', 0)
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            duration_text = f"{minutes}:{seconds:02d}"
+            item.setText(4, duration_text)
+            
+            # Bitrate
+            bitrate = result.get('bitrate', 0)
+            item.setText(5, f"{bitrate} kbps")
+            
+            # Match score
+            score = result.get('combined_score', 0)
+            item.setText(6, f"{score:.1f}%")
+            
+            # Color code match score
+            if score >= 90:
+                item.setBackground(6, QColor(200, 255, 200))  # Light green
+            elif score >= 80:
+                item.setBackground(6, QColor(220, 255, 220))  # Lighter green
+            elif score >= 70:
+                item.setBackground(6, QColor(255, 255, 200))  # Light yellow
+            else:
+                item.setBackground(6, QColor(255, 220, 220))  # Light red
+        
+        # Update status
+        self.status_label.setText(f"Displaying {len(self.current_results)} results")
+        
+        # Update button states
+        self.update_button_states()
+    
+    def update_button_states(self):
+        """Update button states based on selection."""
+        selected_items = self.results_tree.selectedItems()
+        
+        # Check if any file items (not group headers) are selected
+        has_file_selection = any(
+            item.data(0, Qt.UserRole + 1) is not None 
+            for item in selected_items
+        )
+        
+        has_results = self.results_tree.topLevelItemCount() > 0
+        
+        self.show_folder_button.setEnabled(has_file_selection)
+        self.copy_button.setEnabled(has_file_selection)
+        self.export_button.setEnabled(has_results)
+        self.clear_button.setEnabled(has_results)
+    
+    def get_selected_file_paths(self):
+        """Get file paths of selected items."""
+        file_paths = []
+        
+        # Process all selected items
+        for item in self.results_tree.selectedItems():
+            # Check if this is a file item (not a group header)
+            file_path = item.data(0, Qt.UserRole + 1)
+            if file_path:
+                file_paths.append(file_path)
+            else:
+                # It's a group header, add all child file paths
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    child_path = child.data(0, Qt.UserRole + 1)
+                    if child_path:
+                        file_paths.append(child_path)
+        
+        # Remove duplicates while preserving order
+        unique_paths = []
+        for path in file_paths:
+            if path not in unique_paths:
+                unique_paths.append(path)
+        
+        return unique_paths
     
     def show_context_menu(self, position):
         """Show context menu when right-clicking on a result item."""
-        # Check if there are any items in the table
-        if self.results_table.rowCount() == 0:
+        # Check if there are any items in the tree
+        if self.results_tree.topLevelItemCount() == 0:
             return
-            
-        # Get selected items
-        selected_indexes = self.results_table.selectedIndexes()
-        if not selected_indexes:
-            # If no selection, select row under cursor
-            row = self.results_table.rowAt(position.y())
-            if row >= 0:
-                self.results_table.selectRow(row)
-            else:
-                return
+        
+        # Get the item under cursor
+        item = self.results_tree.itemAt(position)
+        if not item:
+            return
+        
+        # Check if item is a file or a group header
+        is_file_item = item.data(0, Qt.UserRole + 1) is not None
+        is_group_item = item.data(0, Qt.UserRole) is not None
         
         # Create context menu
         context_menu = QMenu(self)
         
-        # Add actions
-        show_action = context_menu.addAction("Show in Folder")
-        copy_action = context_menu.addAction("Copy to Export Folder")
+        if is_file_item:
+            # File item menu
+            show_action = context_menu.addAction("Show in Folder")
+            copy_action = context_menu.addAction("Copy to Export Folder")
+            
+            # Get default export directory for quick copy
+            default_export_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+            
+            # Connect actions
+            show_action.triggered.connect(self.show_in_folder)
+            
+            if default_export_dir:
+                # If default export directory exists, enable direct copy
+                folder_name = os.path.basename(default_export_dir)
+                if folder_name:
+                    copy_action.setText(f"Copy to Export Folder ({folder_name})")
+                copy_action.triggered.connect(lambda: self.copy_to_export_folder(default_export_dir))
+            else:
+                # Otherwise, use standard copy dialog
+                copy_action.triggered.connect(self.copy_to_folder)
+        
+        if is_group_item:
+            # Group item menu
+            if item.childCount() > 0:
+                if item.isExpanded():
+                    expand_action = context_menu.addAction("Collapse")
+                    expand_action.triggered.connect(lambda: item.setExpanded(False))
+                else:
+                    expand_action = context_menu.addAction("Expand")
+                    expand_action.triggered.connect(lambda: item.setExpanded(True))
+                
+                # Add option to expand/collapse all
+                context_menu.addSeparator()
+                expand_all_action = context_menu.addAction("Expand All")
+                expand_all_action.triggered.connect(self.expand_all_groups)
+                
+                collapse_all_action = context_menu.addAction("Collapse All")
+                collapse_all_action.triggered.connect(self.collapse_all_groups)
+        
+        # Add general actions
         context_menu.addSeparator()
         export_action = context_menu.addAction("Export Results")
-        
-        # Get default export directory for quick copy
-        default_export_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
-        
-        # Connect actions
-        show_action.triggered.connect(self.show_in_folder)
-        
-        if default_export_dir:
-            # If default export directory exists, enable direct copy
-            folder_name = os.path.basename(default_export_dir)
-            if folder_name:
-                copy_action.setText(f"Copy to Export Folder ({folder_name})")
-            copy_action.triggered.connect(lambda: self.copy_to_export_folder(default_export_dir))
-        else:
-            # Otherwise, use standard copy dialog
-            copy_action.triggered.connect(self.copy_to_folder)
-        
         export_action.triggered.connect(self.export_results)
+        
+        clear_action = context_menu.addAction("Clear Results")
+        clear_action.triggered.connect(self.clear_results)
         
         # Show context menu
         context_menu.exec_(QCursor.pos())
+    
+    def expand_all_groups(self):
+        """Expand all group items."""
+        root = self.results_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            item.setExpanded(True)
+    
+    def collapse_all_groups(self):
+        """Collapse all group items."""
+        root = self.results_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            item.setExpanded(False)
     
     def copy_to_export_folder(self, export_dir):
         """Copy selected files directly to the configured export folder."""
@@ -213,7 +516,7 @@ class ResultsPanel(QWidget):
                 "Copy Failed",
                 f"Error starting copy operation: {str(e)}"
             )
-
+    
     def copy_next_file(self):
         """Copy the next file in the queue."""
         # Check if we're done
@@ -262,120 +565,6 @@ class ResultsPanel(QWidget):
             self.copy_timer.stop()
             self.copy_completed(self.copy_success_count, self.copy_failed_files)
             return
-    
-    def set_results(self, results):
-        """Set search results."""
-        self.current_results = results
-        self.display_results()
-    
-    def display_results(self):
-        """Display search results in the table."""
-        # Clear table
-        self.results_table.setSortingEnabled(False)
-        self.results_table.setRowCount(0)
-        
-        if not self.current_results:
-            self.status_label.setText("No results to display")
-            self.update_button_states()
-            return
-        
-        # Populate table
-        for row, result in enumerate(self.current_results):
-            self.results_table.insertRow(row)
-            
-            file_path = result.get('file_path', '')
-            
-            # Filename
-            filename = os.path.basename(file_path)
-            filename_item = QTableWidgetItem(filename)
-            filename_item.setData(Qt.UserRole, file_path)
-            # Add tooltip to show full path
-            filename_item.setToolTip(file_path)
-            self.results_table.setItem(row, 0, filename_item)
-            
-            # Artist
-            artist = result.get('artist', '')
-            artist_item = QTableWidgetItem(artist)
-            self.results_table.setItem(row, 1, artist_item)
-            
-            # Title
-            title = result.get('title', '')
-            title_item = QTableWidgetItem(title)
-            self.results_table.setItem(row, 2, title_item)
-            
-            # Format
-            format_type = result.get('format', '')
-            format_item = QTableWidgetItem(format_type)
-            self.results_table.setItem(row, 3, format_item)
-            
-            # Duration
-            duration = result.get('duration', 0)
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            duration_text = f"{minutes}:{seconds:02d}"
-            duration_item = QTableWidgetItem(duration_text)
-            duration_item.setData(Qt.UserRole, duration)  # Store raw duration for sorting
-            self.results_table.setItem(row, 4, duration_item)
-            
-            # Bitrate
-            bitrate = result.get('bitrate', 0)
-            bitrate_text = f"{bitrate} kbps"
-            bitrate_item = QTableWidgetItem(bitrate_text)
-            bitrate_item.setData(Qt.UserRole, bitrate)  # Store raw bitrate for sorting
-            self.results_table.setItem(row, 5, bitrate_item)
-            
-            # Match Score
-            score = result.get('combined_score', 0)
-            score_text = f"{score:.1f}%"
-            score_item = QTableWidgetItem(score_text)
-            score_item.setData(Qt.UserRole, score)  # Store raw score for sorting
-            
-            # Color code match score
-            if score >= 90:
-                score_item.setBackground(QColor(200, 255, 200))  # Light green
-            elif score >= 80:
-                score_item.setBackground(QColor(220, 255, 220))  # Lighter green
-            elif score >= 70:
-                score_item.setBackground(QColor(255, 255, 200))  # Light yellow
-            else:
-                score_item.setBackground(QColor(255, 220, 220))  # Light red
-            
-            self.results_table.setItem(row, 6, score_item)
-        
-        # Update status
-        self.status_label.setText(f"Displaying {len(self.current_results)} results")
-        
-        # Re-enable sorting
-        self.results_table.setSortingEnabled(True)
-        
-        # Update button states
-        self.update_button_states()
-    
-    def update_button_states(self):
-        """Update button states based on selection."""
-        has_results = len(self.current_results) > 0
-        has_selection = len(self.results_table.selectedItems()) > 0
-        
-        self.show_folder_button.setEnabled(has_selection)
-        self.copy_button.setEnabled(has_selection)
-        self.export_button.setEnabled(has_results)
-        self.clear_button.setEnabled(has_results)
-    
-    def get_selected_file_paths(self):
-        """Get file paths of selected rows."""
-        file_paths = []
-        
-        # Get selected rows
-        selected_rows = set()
-        for item in self.results_table.selectedItems():
-            selected_rows.add(item.row())
-        
-        # Get file paths
-        for row in selected_rows:
-            file_path = self.results_table.item(row, 0).data(Qt.UserRole)
-            file_paths.append(file_path)
-        
-        return file_paths
     
     def show_in_folder(self):
         """Show selected file in folder."""
@@ -463,97 +652,9 @@ class ResultsPanel(QWidget):
         
         if not destination:
             return
-     
-        # Create progress dialog (non-modal)
-        self.copy_progress = QProgressDialog("Copying files...", "Cancel", 0, 100, self)
-        self.copy_progress.setWindowTitle("Copying")
-        self.copy_progress.setWindowModality(Qt.NonModal)  # Make non-modal
-        self.copy_progress.setMinimumDuration(0)
-        self.copy_progress.setAutoClose(False)
-        self.copy_progress.setAutoReset(False)
         
-        # Create a copy worker using Qt's thread pool
-        from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
-        
-        class CopyWorker(QRunnable):
-            """Worker for copying files in a separate thread."""
-            
-            class Signals(QObject):
-                """Worker signals."""
-                progress = pyqtSignal(float, str)
-                finished = pyqtSignal(int, dict)
-                
-            def __init__(self, file_paths, destination):
-                """Initialize the worker."""
-                super().__init__()
-                self.file_paths = file_paths
-                self.destination = destination
-                self.signals = self.Signals()
-                self.cancelled = False
-            
-            @pyqtSlot()
-            def run(self):
-                """Run the worker."""
-                success_count = 0
-                failed_files = {}
-                total_files = len(self.file_paths)
-                
-                for i, src_path in enumerate(self.file_paths):
-                    if self.cancelled:
-                        break
-                    
-                    try:
-                        # Get filename
-                        filename = os.path.basename(src_path)
-                        dest_path = os.path.join(self.destination, filename)
-                        
-                        # Check if destination file already exists
-                        if os.path.exists(dest_path):
-                            # Append number to filename to make it unique
-                            base, ext = os.path.splitext(filename)
-                            counter = 1
-                            while os.path.exists(dest_path):
-                                dest_path = os.path.join(self.destination, f"{base} ({counter}){ext}")
-                                counter += 1
-                        
-                        # Copy file
-                        with open(src_path, 'rb') as src_file:
-                            with open(dest_path, 'wb') as dest_file:
-                                dest_file.write(src_file.read())
-                        
-                        success_count += 1
-                    
-                    except Exception as e:
-                        logger.error(f"Failed to copy file {src_path}: {str(e)}")
-                        failed_files[src_path] = str(e)
-                    
-                    # Report progress
-                    progress = (i + 1) / total_files * 100
-                    self.signals.progress.emit(progress, f"Copied {i + 1} of {total_files} files")
-                
-                self.signals.finished.emit(success_count, failed_files)
-        
-        # Create worker
-        worker = CopyWorker(file_paths, destination)
-        
-        # Connect signals
-        worker.signals.progress.connect(self.update_copy_progress)
-        worker.signals.finished.connect(self.copy_completed)
-        
-        # Handle cancel button
-        self.copy_progress.canceled.connect(lambda: setattr(worker, 'cancelled', True))
-        
-        # Start worker
-        QThreadPool.globalInstance().start(worker)
-        
-        # Show the dialog after starting the thread
-        self.copy_progress.show()
-
-    def update_copy_progress(self, value, message):
-        """Update copy progress dialog."""
-        if hasattr(self, 'copy_progress') and self.copy_progress:
-            self.copy_progress.setValue(int(value))
-            self.copy_progress.setLabelText(message)
+        # Use the copy to export folder method
+        self.copy_to_export_folder(destination)
 
     def copy_completed(self, success_count, failed_files):
         """Handle copy completion."""
@@ -583,7 +684,7 @@ class ResultsPanel(QWidget):
     
     def export_results(self):
         """Export search results to a file."""
-        if not self.current_results:
+        if self.results_tree.topLevelItemCount() == 0:
             return
         
         # Get default export directory from config
@@ -601,33 +702,77 @@ class ResultsPanel(QWidget):
             "CSV Files (*.csv);;Text Files (*.txt);;All Files (*.*)"
         )
         
-        
         if not file_path:
             return
         
         try:
             with open(file_path, 'w', encoding='utf-8') as file:
-                # Write header
-                file.write("Filename,Artist,Title,Format,Duration,Bitrate,Match Score,File Path\n")
-                
-                # Write data
-                for result in self.current_results:
-                    filename = os.path.basename(result.get('file_path', ''))
-                    artist = result.get('artist', '')
-                    title = result.get('title', '')
-                    format_type = result.get('format', '')
-                    duration = result.get('duration', 0)
-                    bitrate = result.get('bitrate', 0)
-                    score = result.get('combined_score', 0)
-                    file_path = result.get('file_path', '')
+                if self.is_auto_search:
+                    # Export grouped results with status
+                    file.write("Status,Source Line,Artist,Title,Match Count,Filename,Format,Duration,Bitrate,Match Score,File Path\n")
                     
-                    # Escape CSV fields
-                    filename = f'"{filename.replace("\"", "\"\"")}"'
-                    artist = f'"{artist.replace("\"", "\"\"")}"'
-                    title = f'"{title.replace("\"", "\"\"")}"'
-                    file_path = f'"{file_path.replace("\"", "\"\"")}"'
+                    for i in range(self.results_tree.topLevelItemCount()):
+                        parent = self.results_tree.topLevelItem(i)
+                        source_line = parent.text(0)
+                        artist = parent.text(1)
+                        title = parent.text(2)
+                        match_count = parent.childCount()
+                        
+                        if match_count == 0:
+                            status = "Missing"
+                            # Write header row
+                            file.write(f'"{status}","{source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
+                        else:
+                            if match_count == 1:
+                                status = "Found"
+                            else:
+                                status = "Multiple"
+                            
+                            # Write header row
+                            file.write(f'"{status}","{source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
+                            
+                            # Write each match
+                            for j in range(match_count):
+                                child = parent.child(j)
+                                filename = child.text(0)
+                                child_artist = child.text(1)
+                                child_title = child.text(2)
+                                format_type = child.text(3)
+                                duration = child.text(4)
+                                bitrate = child.text(5)
+                                score = child.text(6)
+                                file_path = child.data(0, Qt.UserRole + 1)
+                                
+                                # Escape CSV fields
+                                filename = f'"{filename.replace("\"", "\"\"")}"'
+                                child_artist = f'"{child_artist.replace("\"", "\"\"")}"'
+                                child_title = f'"{child_title.replace("\"", "\"\"")}"'
+                                file_path = f'"{file_path.replace("\"", "\"\"")}"'
+                                
+                                # Write match row (with leading commas to align under parent)
+                                file.write(f'"","",,,"",{filename},{format_type},{duration},{bitrate},{score},{file_path}\n')
+                else:
+                    # Export flat results
+                    file.write("Filename,Artist,Title,Format,Duration,Bitrate,Match Score,File Path\n")
                     
-                    file.write(f"{filename},{artist},{title},{format_type},{duration},{bitrate},{score},{file_path}\n")
+                    for i in range(self.results_tree.topLevelItemCount()):
+                        item = self.results_tree.topLevelItem(i)
+                        filename = item.text(0)
+                        artist = item.text(1)
+                        title = item.text(2)
+                        format_type = item.text(3)
+                        duration = item.text(4)
+                        bitrate = item.text(5)
+                        score = item.text(6)
+                        file_path = item.data(0, Qt.UserRole + 1)
+                        
+                        # Escape CSV fields
+                        filename = f'"{filename.replace("\"", "\"\"")}"'
+                        artist = f'"{artist.replace("\"", "\"\"")}"'
+                        title = f'"{title.replace("\"", "\"\"")}"'
+                        file_path = f'"{file_path.replace("\"", "\"\"")}"'
+                        
+                        file.write(f"{filename},{artist},{title},{format_type},{duration},{bitrate},{score},{file_path}\n")
             
             QMessageBox.information(
                 self,
@@ -646,7 +791,8 @@ class ResultsPanel(QWidget):
     def clear_results(self):
         """Clear search results."""
         self.current_results = []
-        self.results_table.setRowCount(0)
+        self.grouped_results = {}
+        self.results_tree.clear()
         self.status_label.setText("No results to display")
         self.update_button_states()
     
@@ -655,18 +801,20 @@ class ResultsPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Load column widths
-        for i in range(self.results_table.columnCount()):
+        for i in range(7):  # 7 columns
             width = settings.value(f"results/column_width_{i}", 0, type=int)
             if width > 0:
-                self.results_table.setColumnWidth(i, width)
+                self.results_tree.setColumnWidth(i, width)
     
     def save_settings(self):
         """Save panel settings."""
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Save column widths
-        for i in range(self.results_table.columnCount()):
-            settings.setValue(f"results/column_width_{i}", self.results_table.columnWidth(i))
+        for i in range(7):  # 7 columns
+            settings.setValue(f"results/column_width_{i}", self.results_tree.columnWidth(i))
+        
+        # Save expanded state is handled in on_item_expanded/on_item_collapsed
     
     def closeEvent(self, event):
         """Handle panel close event."""
