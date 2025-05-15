@@ -3,6 +3,7 @@ Main window GUI for the music indexer application.
 """
 import sys
 import os
+import logging
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QLabel, QStatusBar, QMessageBox,
@@ -36,6 +37,9 @@ class MainWindow(QMainWindow):
         # Initialize application components
         self.config_manager = ConfigManager()
         self.music_indexer = MusicIndexer()
+
+        # Set up application logging
+        self.setup_logging()
         
         # Set up UI
         self.init_ui()
@@ -51,6 +55,20 @@ class MainWindow(QMainWindow):
         
         logger.info("Main window initialized")
 
+    def setup_logging(self):
+        """Set up application-wide logging."""
+        # Get root logger
+        root_logger = logging.getLogger()
+        
+        # Set global log level
+        log_level = self.config_manager.get("app", "log_level", "INFO")
+        numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+        root_logger.setLevel(numeric_level)
+        
+        # Log application startup
+        logger.info(f"Music Indexer v{self.config_manager.get('app', 'version', '0.1.0')} starting up")
+        logger.info(f"Log level set to: {log_level}")
+        
     def process_events(self):
         """Process pending events to keep UI responsive."""
         from PyQt5.QtCore import QCoreApplication

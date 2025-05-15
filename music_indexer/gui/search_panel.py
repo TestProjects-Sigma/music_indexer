@@ -2,10 +2,12 @@
 Search panel GUI for the music indexer application.
 """
 import os
+import logging
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QGroupBox, QRadioButton, QFileDialog,
-    QComboBox, QSlider, QCheckBox, QMessageBox, QProgressDialog
+    QComboBox, QSlider, QCheckBox, QMessageBox, QProgressDialog,
+    QFrame
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 
@@ -13,6 +15,7 @@ from ..utils.logger import get_logger
 
 logger = get_logger()
 
+from .log_console import LogConsole
 
 class SearchPanel(QWidget):
     """Search panel for the Music Indexer application."""
@@ -161,7 +164,20 @@ class SearchPanel(QWidget):
         auto_search_layout.addLayout(process_button_layout)
         
         main_layout.addWidget(self.auto_search_group)
-        
+
+        # Add a separator line (optional)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        main_layout.addWidget(separator)
+
+        # Create and add log console
+        self.log_console = LogConsole()
+        main_layout.addWidget(self.log_console)
+
+        # Log message to show console is active
+        logging.info("Search panel initialized. Ready for search queries.")
+
         # Add stretch to push everything to the top
         main_layout.addStretch()
         
