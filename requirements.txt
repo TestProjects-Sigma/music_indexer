@@ -10,3 +10,6 @@ pillow>=9.0.0          # Image processing (for album art)
 pytest>=6.2.5          # Testing
 black>=21.9b0          # Code formatting
 flake8>=3.9.2          # Linting
+
+# Spotify integration dependencies
+requests>=2.25.1

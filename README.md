@@ -47,6 +47,67 @@ The automatic search feature now provides better visibility:
 - **Match Statistics**: View counts of found, missing, and multiple matches in the status bar
 - **Enhanced CSV Export**: Export results with hierarchical information including match status
 
+## Spotify Integration
+The Music Indexer now includes a dedicated Spotify tab for extracting playlists:
+
+- **Playlist Extraction**: Extract tracks from any public Spotify playlist using the playlist URL
+- **Spotify API Support**: Connect using your Spotify API credentials (Client ID and Secret)
+- **Credential Management**: Securely save your Spotify credentials for future sessions
+- **Format Compatibility**: Extracted playlists are saved in the correct format for automatic searching
+- **Guided Workflow**: Step-by-step instructions help you find matches for your Spotify playlists
+
+## Grouped Results View
+The Results panel now includes a hierarchical grouped view for automatic searches:
+
+- **Organized Results**: Files are grouped by their source entry in the text file
+- **Status Indicators**: 
+  - ✓ Green "Found" for entries with exactly one match
+  - ⚠ Orange "Multiple" for entries with multiple matches (showing the count)
+  - ❌ Red "Missing" for entries with no matches
+- **Expandable Groups**: Each entry can be expanded or collapsed to show/hide matching files
+- **Group Operations**: Right-click context menu allows expanding or collapsing all groups
+
+## Right-Click Menu Enhancements
+The results panel now includes a fully-featured right-click context menu:
+
+- **Copy to Export Folder**: Copy selected files directly to the configured export directory
+- **Show in Folder**: Open the file's location in your system's file explorer
+- **Play Audio**: Play the selected audio file with your system's default audio player
+- **Export Results**: Export all results to a CSV file
+
+## Audio Playback
+Audio files can now be played directly from the results panel:
+
+- **Double-Click Playback**: Double-click any file in the results to play it with your system's default audio player
+- **Play from Menu**: Right-click on a file and select "Play Audio" to listen to it
+- **Multiple File Support**: Select and play different audio formats including MP3, FLAC, M4A, AAC, and WAV
+
+## Enhanced Search Results
+The automatic search feature now provides better visibility:
+
+- **Missing Track Detection**: Clearly see which entries from your text file have no matching files
+- **Match Statistics**: View counts of found, missing, and multiple matches in the status bar
+- **Enhanced CSV Export**: Export results with hierarchical information including match status
+
+## Getting Started with Spotify Integration
+
+1. **Get Spotify API Credentials**:
+   - Create an account at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/)
+   - Create a new application to get your Client ID and Client Secret
+
+2. **Using the Spotify Tab**:
+   - Enter the URL of a public Spotify playlist
+   - Provide your Spotify API credentials
+   - Select the output file location
+   - Click "Extract Playlist"
+
+3. **Finding Matches**:
+   - After extraction, go to the Search tab
+   - Select "Automatic Search"
+   - Browse and select your extracted playlist file
+   - Click "Process File" to find matches in your music collection
+
+
 ## Requirements
 
 - Python 3.6+

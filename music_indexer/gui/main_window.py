@@ -20,6 +20,9 @@ from .search_panel import SearchPanel
 from .results_panel import ResultsPanel
 from .settings_panel import SettingsPanel
 
+from .spotify_panel import SpotifyPanel
+
+
 logger = get_logger()
 
 
@@ -55,9 +58,16 @@ class MainWindow(QMainWindow):
     
     def init_ui(self):
         """Initialize the user interface."""
+        from PyQt5.QtWidgets import QDesktopWidget
         # Set window properties
         self.setWindowTitle("Music Indexer")
         self.setMinimumSize(900, 600)
+        
+        # Set window size to 80% of screen width and height
+        screen = QDesktopWidget().screenGeometry()
+        width = int(screen.width() * 0.8)
+        height = int(screen.height() * 0.8)
+        self.resize(width, height)
         
         # Create central widget
         central_widget = QWidget()
@@ -74,6 +84,7 @@ class MainWindow(QMainWindow):
         self.search_panel = SearchPanel(self.music_indexer)
         self.results_panel = ResultsPanel(self.music_indexer)
         self.settings_panel = SettingsPanel(self.music_indexer)
+        self.spotify_panel = SpotifyPanel(self.music_indexer)
         
         # Connect panels
         self.search_panel.search_completed.connect(self.results_panel.set_results)
@@ -82,6 +93,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.search_panel, "Search")
         self.tab_widget.addTab(self.results_panel, "Results")
         self.tab_widget.addTab(self.settings_panel, "Settings")
+        self.tab_widget.addTab(self.spotify_panel, "Spotify")
         
         # Create button layout
         button_layout = QHBoxLayout()
