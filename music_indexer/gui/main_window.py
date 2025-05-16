@@ -13,6 +13,7 @@ from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QIcon
 
 from ..utils.logger import get_logger
+logger = get_logger()
 from ..utils.config_manager import ConfigManager
 from .. import MusicIndexer
 
@@ -22,10 +23,6 @@ from .results_panel import ResultsPanel
 from .settings_panel import SettingsPanel
 
 from .spotify_panel import SpotifyPanel
-
-
-logger = get_logger()
-
 
 class MainWindow(QMainWindow):
     """Main window for the Music Indexer application."""

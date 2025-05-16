@@ -12,10 +12,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 
 from ..utils.logger import get_logger
-
 logger = get_logger()
 
 from .log_console import LogConsole
+
 
 class SearchPanel(QWidget):
     """Search panel for the Music Indexer application."""
@@ -164,22 +164,35 @@ class SearchPanel(QWidget):
         auto_search_layout.addLayout(process_button_layout)
         
         main_layout.addWidget(self.auto_search_group)
-
-        # Add a separator line (optional)
+        
+        # Add separator
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         main_layout.addWidget(separator)
-
-        # Create and add log console
-        self.log_console = LogConsole()
-        main_layout.addWidget(self.log_console)
-
-        # Log message to show console is active
-        logging.info("Search panel initialized. Ready for search queries.")
-
-        # Add stretch to push everything to the top
-        main_layout.addStretch()
+        
+        # Create log console section with proper parent reference
+        log_section = QWidget(self)
+        log_layout = QVBoxLayout(log_section)
+        
+        # Add a header for the log section
+        log_header = QHBoxLayout()
+        log_title = QLabel("Application Log")
+        log_title.setStyleSheet("font-weight: bold;")
+        log_header.addWidget(log_title)
+        log_header.addStretch()
+        log_layout.addLayout(log_header)
+        
+        # Create log console with proper parent
+        self.log_console = LogConsole(log_section)
+        log_layout.addWidget(self.log_console)
+        
+        # Add log section to main layout
+        main_layout.addWidget(log_section)
+        
+        # Log initial message using the logger
+        logger = get_logger()
+        logger.info("Search panel initialized. Ready for search queries.")
         
         # Set initial state
         self.toggle_search_mode()

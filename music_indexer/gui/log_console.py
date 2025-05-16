@@ -10,6 +10,9 @@ from PyQt5.QtCore import Qt, pyqtSlot, QObject, pyqtSignal
 from PyQt5.QtGui import QTextCursor, QColor, QTextCharFormat, QFont
 import logging
 
+from ..utils.logger import get_logger
+logger = get_logger()
+
 # Create custom logging handler for Qt
 class QTextEditLogger(QObject, logging.Handler):
     """Custom logging handler that outputs to a QTextEdit."""
@@ -46,9 +49,14 @@ class LogConsole(QWidget):
         """Initialize the log console."""
         super().__init__(parent)
         
-        self.log_handler = QTextEditLogger()
+        # Store parent reference
+        self.parent_widget = parent
+        
+        # Create handler with parent
+        self.log_handler = QTextEditLogger(self)
         self.setup_ui()
         self.setup_logging()
+
     
     def setup_ui(self):
         """Set up the user interface."""
@@ -130,12 +138,26 @@ class LogConsole(QWidget):
         # Get the root logger
         root_logger = logging.getLogger()
         
-        # Add our handler to the root logger
-        root_logger.addHandler(self.log_handler)
+        # Add our handler to the root logger if not already added
+        if self.log_handler not in root_logger.handlers:
+            root_logger.addHandler(self.log_handler)
         
         # Set initial log level
         self.update_log_level()
-    
+
+    def removeHandler(self):
+        """Remove our handler from the logging system."""
+        if hasattr(self, 'log_handler'):
+            root_logger = logging.getLogger()
+            if self.log_handler in root_logger.handlers:
+                root_logger.removeHandler(self.log_handler)
+                self.log_handler = None
+
+    def destroy(self, destroyWindow=True, destroySubWindows=True):
+        """Override to clean up logging handler."""
+        self.removeHandler()
+        super().destroy(destroyWindow, destroySubWindows)
+
     @pyqtSlot(str, int)
     def append_log(self, message, level):
         """Append a log message with proper formatting."""
@@ -184,3 +206,11 @@ class LogConsole(QWidget):
         """Manually log a message."""
         logger = logging.getLogger()
         logger.log(level, message)
+
+    def cleanup(self):
+        """Clean up before deletion."""
+        try:
+            if hasattr(self, 'log_record'):
+                self.log_record.disconnect()
+        except:
+            pass

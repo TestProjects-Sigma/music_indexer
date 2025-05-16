@@ -10,7 +10,6 @@ from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
 
 from ..utils.logger import get_logger
-
 logger = get_logger()
 
 
