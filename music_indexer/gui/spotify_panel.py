@@ -300,6 +300,23 @@ class SpotifyPanel(QWidget):
         self.extraction_worker.signals.update_status.connect(self.update_status)
         self.extraction_worker.signals.finished.connect(self.extraction_finished)
         self.extraction_worker.start()
+
+        from PyQt5.QtWidgets import QScrollArea
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        
+        main_widget = QWidget()
+        main_layout = QVBoxLayout(main_widget)
+        
+        # Add all your content to main_layout
+        
+        # Set the main widget as the scroll area's widget
+        scroll_area.setWidget(main_widget)
+        
+        # Create the panel's main layout and add the scroll area
+        panel_layout = QVBoxLayout(self)
+        panel_layout.addWidget(scroll_area)
     
     def extraction_finished(self, success, message):
         """Handle extraction completion."""
