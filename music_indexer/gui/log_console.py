@@ -209,8 +209,9 @@ class LogConsole(QWidget):
 
     def cleanup(self):
         """Clean up before deletion."""
+        self.removeHandler()
         try:
-            if hasattr(self, 'log_record'):
-                self.log_record.disconnect()
+            if hasattr(self, 'log_handler') and hasattr(self.log_handler, 'log_record'):
+                self.log_handler.log_record.disconnect()
         except:
             pass

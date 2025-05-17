@@ -46,6 +46,9 @@ def main():
     # Run application
     exit_code = app.exec_()
     
+    # Explicitly shut down logging system before app exits
+    logging.shutdown()
+    
     logger.info(f"Application exited with code {exit_code}")
     return exit_code
 

@@ -355,10 +355,13 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event."""
+        # Clean up logging handlers
+        if hasattr(self, 'search_panel') and hasattr(self.search_panel, 'log_console'):
+            self.search_panel.log_console.cleanup()
+        
         # Save settings
         self.save_window_settings()
         event.accept()
-
 
 def run_application():
     """Run the Music Indexer application."""

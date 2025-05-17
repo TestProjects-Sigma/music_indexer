@@ -39,6 +39,27 @@ def cleanup_pycache(root_dir, dry_run=False):
     """Remove all __pycache__ directories and .pyc files."""
     print("\nCleaning up Python cache files...")
     
+    # Find .pyc and .pyo files first (before removing directories)
+    pyc_files = []
+    for ext in ["*.pyc", "*.pyo", "*.pyd"]:
+        pattern = os.path.join(root_dir, "**", ext)
+        pyc_files.extend(glob.glob(pattern, recursive=True))
+    
+    # Remove individual files first
+    removed_files = 0
+    for pyc_file in pyc_files:
+        if os.path.exists(pyc_file):  # Check if file still exists
+            if dry_run:
+                print(f"Would remove file: {pyc_file}")
+                removed_files += 1
+            else:
+                try:
+                    print(f"Removing file: {pyc_file}")
+                    os.remove(pyc_file)
+                    removed_files += 1
+                except (FileNotFoundError, PermissionError) as e:
+                    print(f"Could not remove {pyc_file}: {e}")
+    
     # Find and remove __pycache__ directories
     pycache_dirs = []
     for root, dirs, _ in os.walk(root_dir):
@@ -46,28 +67,23 @@ def cleanup_pycache(root_dir, dry_run=False):
             if dir == "__pycache__":
                 pycache_dirs.append(os.path.join(root, dir))
     
-    # Find .pyc and .pyo files
-    pyc_files = []
-    for ext in ["*.pyc", "*.pyo", "*.pyd"]:
-        pattern = os.path.join(root_dir, "**", ext)
-        pyc_files.extend(glob.glob(pattern, recursive=True))
-    
-    # Report and delete
+    # Remove directories after files
+    removed_dirs = 0
     for pycache_dir in pycache_dirs:
-        if dry_run:
-            print(f"Would remove directory: {pycache_dir}")
-        else:
-            print(f"Removing directory: {pycache_dir}")
-            shutil.rmtree(pycache_dir)
-    
-    for pyc_file in pyc_files:
-        if dry_run:
-            print(f"Would remove file: {pyc_file}")
-        else:
-            print(f"Removing file: {pyc_file}")
-            os.remove(pyc_file)
+        if os.path.exists(pycache_dir):  # Check if directory still exists
+            if dry_run:
+                print(f"Would remove directory: {pycache_dir}")
+                removed_dirs += 1
+            else:
+                try:
+                    print(f"Removing directory: {pycache_dir}")
+                    shutil.rmtree(pycache_dir)
+                    removed_dirs += 1
+                except (FileNotFoundError, PermissionError) as e:
+                    print(f"Could not remove {pycache_dir}: {e}")
     
     print(f"Found {len(pycache_dirs)} __pycache__ directories and {len(pyc_files)} .pyc/.pyo files")
+    print(f"Removed {removed_dirs} directories and {removed_files} files")
 
 def cleanup_cache(root_dir, dry_run=False):
     """Remove cache directory and database files."""
