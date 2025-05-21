@@ -302,9 +302,328 @@ class SettingsPanel(QWidget):
     
     def _apply_theme(self, theme):
         """Apply the selected theme."""
-        # This is a simplified implementation
-        # In a real application, you would use QSS (Qt Style Sheets) to apply themes
-        pass
+        # Define the stylesheets for different themes
+        dark_theme = """
+        QWidget {
+            background-color: #2D2D30;
+            color: #E1E1E1;
+        }
+        
+        QMainWindow {
+            background-color: #2D2D30;
+        }
+        
+        QTabWidget::pane {
+            border: 1px solid #3E3E42;
+            background-color: #252526;
+        }
+        
+        QTabBar::tab {
+            background-color: #2D2D30;
+            color: #E1E1E1;
+            padding: 6px 12px;
+            border: 1px solid #3E3E42;
+            border-bottom: none;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        
+        QTabBar::tab:selected {
+            background-color: #3E3E42;
+        }
+        
+        QTabBar::tab:hover:!selected {
+            background-color: #3E3E42;
+        }
+        
+        QPushButton {
+            background-color: #0E639C;
+            color: #FFFFFF;
+            padding: 5px 10px;
+            border: 1px solid #0E639C;
+            border-radius: 3px;
+        }
+        
+        QPushButton:hover {
+            background-color: #1177BB;
+            border: 1px solid #1177BB;
+        }
+        
+        QPushButton:pressed {
+            background-color: #0D5C8F;
+        }
+        
+        QPushButton:disabled {
+            background-color: #3E3E42;
+            color: #656565;
+            border: 1px solid #3E3E42;
+        }
+        
+        QLineEdit, QComboBox, QSpinBox {
+            background-color: #333337;
+            color: #E1E1E1;
+            border: 1px solid #3E3E42;
+            padding: 3px;
+            border-radius: 3px;
+        }
+        
+        QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+            border: 1px solid #0E639C;
+        }
+        
+        QCheckBox {
+            color: #E1E1E1;
+        }
+        
+        QCheckBox::indicator {
+            width: 13px;
+            height: 13px;
+            border: 1px solid #3E3E42;
+            background-color: #333337;
+        }
+        
+        QCheckBox::indicator:checked {
+            background-color: #0E639C;
+        }
+        
+        QTreeView, QListView, QTableView {
+            border: 1px solid #3E3E42;
+            background-color: #252526;
+            alternate-background-color: #2D2D30;
+            color: #E1E1E1;
+        }
+        
+        QTreeView::item:selected, QListView::item:selected, QTableView::item:selected {
+            background-color: #0E639C;
+            color: #FFFFFF;
+        }
+        
+        QTreeView::item:hover, QListView::item:hover, QTableView::item:hover {
+            background-color: #3E3E42;
+        }
+        
+        QHeaderView::section {
+            background-color: #2D2D30;
+            color: #E1E1E1;
+            padding: 4px;
+            border: 1px solid #3E3E42;
+        }
+        
+        QProgressBar {
+            border: 1px solid #3E3E42;
+            border-radius: 3px;
+            background-color: #333337;
+            text-align: center;
+            color: #E1E1E1;
+        }
+        
+        QProgressBar::chunk {
+            background-color: #0E639C;
+            width: 1px;
+        }
+        
+        QTextEdit {
+            background-color: #252526;
+            color: #E1E1E1;
+            border: 1px solid #3E3E42;
+        }
+        
+        QStatusBar {
+            background-color: #1E1E1E;
+            color: #E1E1E1;
+        }
+        
+        QMenu {
+            background-color: #252526;
+            color: #E1E1E1;
+            border: 1px solid #3E3E42;
+        }
+        
+        QMenu::item {
+            padding: 5px 30px 5px 20px;
+        }
+        
+        QMenu::item:selected {
+            background-color: #0E639C;
+            color: #FFFFFF;
+        }
+        
+        QMenu::separator {
+            height: 1px;
+            background-color: #3E3E42;
+            margin: 4px 0px 4px 0px;
+        }
+        """
+        
+        light_theme = """
+        QWidget {
+            background-color: #F0F0F0;
+            color: #333333;
+        }
+        
+        QMainWindow {
+            background-color: #F0F0F0;
+        }
+        
+        QTabWidget::pane {
+            border: 1px solid #CCCCCC;
+            background-color: #FFFFFF;
+        }
+        
+        QTabBar::tab {
+            background-color: #E0E0E0;
+            color: #333333;
+            padding: 6px 12px;
+            border: 1px solid #CCCCCC;
+            border-bottom: none;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        
+        QTabBar::tab:selected {
+            background-color: #FFFFFF;
+        }
+        
+        QTabBar::tab:hover:!selected {
+            background-color: #E8E8E8;
+        }
+        
+        QPushButton {
+            background-color: #0078D7;
+            color: #FFFFFF;
+            padding: 5px 10px;
+            border: 1px solid #0078D7;
+            border-radius: 3px;
+        }
+        
+        QPushButton:hover {
+            background-color: #1684D7;
+            border: 1px solid #1684D7;
+        }
+        
+        QPushButton:pressed {
+            background-color: #006CC1;
+        }
+        
+        QPushButton:disabled {
+            background-color: #CCCCCC;
+            color: #666666;
+            border: 1px solid #CCCCCC;
+        }
+        
+        QLineEdit, QComboBox, QSpinBox {
+            background-color: #FFFFFF;
+            color: #333333;
+            border: 1px solid #CCCCCC;
+            padding: 3px;
+            border-radius: 3px;
+        }
+        
+        QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+            border: 1px solid #0078D7;
+        }
+        
+        QCheckBox {
+            color: #333333;
+        }
+        
+        QCheckBox::indicator {
+            width: 13px;
+            height: 13px;
+            border: 1px solid #CCCCCC;
+            background-color: #FFFFFF;
+        }
+        
+        QCheckBox::indicator:checked {
+            background-color: #0078D7;
+        }
+        
+        QTreeView, QListView, QTableView {
+            border: 1px solid #CCCCCC;
+            background-color: #FFFFFF;
+            alternate-background-color: #F5F5F5;
+            color: #333333;
+        }
+        
+        QTreeView::item:selected, QListView::item:selected, QTableView::item:selected {
+            background-color: #0078D7;
+            color: #FFFFFF;
+        }
+        
+        QTreeView::item:hover, QListView::item:hover, QTableView::item:hover {
+            background-color: #E5F1FB;
+        }
+        
+        QHeaderView::section {
+            background-color: #F0F0F0;
+            color: #333333;
+            padding: 4px;
+            border: 1px solid #CCCCCC;
+        }
+        
+        QProgressBar {
+            border: 1px solid #CCCCCC;
+            border-radius: 3px;
+            background-color: #FFFFFF;
+            text-align: center;
+            color: #333333;
+        }
+        
+        QProgressBar::chunk {
+            background-color: #0078D7;
+            width: 1px;
+        }
+        
+        QTextEdit {
+            background-color: #FFFFFF;
+            color: #333333;
+            border: 1px solid #CCCCCC;
+        }
+        
+        QStatusBar {
+            background-color: #E6E6E6;
+            color: #333333;
+        }
+        
+        QMenu {
+            background-color: #FFFFFF;
+            color: #333333;
+            border: 1px solid #CCCCCC;
+        }
+        
+        QMenu::item {
+            padding: 5px 30px 5px 20px;
+        }
+        
+        QMenu::item:selected {
+            background-color: #0078D7;
+            color: #FFFFFF;
+        }
+        
+        QMenu::separator {
+            height: 1px;
+            background-color: #CCCCCC;
+            margin: 4px 0px 4px 0px;
+        }
+        """
+        
+        # Apply the selected theme
+        from PyQt5.QtWidgets import QApplication
+        
+        if theme == "Dark":
+            QApplication.instance().setStyleSheet(dark_theme)
+            logger.info("Applied dark theme")
+        elif theme == "Light":
+            QApplication.instance().setStyleSheet(light_theme)
+            logger.info("Applied light theme")
+        else:  # System Default
+            QApplication.instance().setStyleSheet("")
+            logger.info("Applied system default theme")
+
+        # Save the theme setting
+        from PyQt5.QtCore import QSettings
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        settings.setValue("appearance/theme", theme)
     
     def closeEvent(self, event):
         """Handle panel close event."""

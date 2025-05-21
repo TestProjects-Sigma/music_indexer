@@ -52,6 +52,9 @@ class MainWindow(QMainWindow):
         
         logger.info("Main window initialized")
 
+        # Add this at the end of __init__, after initializing UI
+        self.load_saved_theme()        
+
     def setup_logging(self):
         """Set up application-wide logging."""
         # Get root logger
@@ -370,13 +373,31 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event."""
-        # Clean up logging handlers
+        # Clean up logging handlers first
         if hasattr(self, 'search_panel') and hasattr(self.search_panel, 'log_console'):
             self.search_panel.log_console.cleanup()
         
-        # Save settings
+        # Explicitly shut down logging system
+        import logging
+        logging.shutdown()
+        
+        # Your existing code for saving settings
         self.save_window_settings()
+        
+        # Only then accept the event to close
         event.accept()
+
+    def load_saved_theme(self):
+        """Load and apply the saved theme."""
+        from PyQt5.QtCore import QSettings
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        theme = settings.value("appearance/theme", "System Default")
+        
+        # Find the settings panel to apply the theme
+        if hasattr(self, 'settings_panel'):
+            self.settings_panel._apply_theme(theme)
+        else:
+            logger.warning("Settings panel not found, couldn't apply theme")
 
 def run_application():
     """Run the Music Indexer application."""
