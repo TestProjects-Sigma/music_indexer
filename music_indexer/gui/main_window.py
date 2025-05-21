@@ -7,7 +7,7 @@ import logging
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QLabel, QStatusBar, QMessageBox,
-    QFileDialog, QProgressDialog, QAction, QMenu
+    QFileDialog, QProgressDialog, QAction, QMenu, QCheckBox
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QIcon
@@ -112,7 +112,15 @@ class MainWindow(QMainWindow):
         
         # Create button layout
         button_layout = QHBoxLayout()
-        
+
+        self.extract_metadata_checkbox = QCheckBox("Extract Audio Metadata")
+        self.extract_metadata_checkbox.setChecked(True)
+        self.extract_metadata_checkbox.setToolTip(
+            "When checked, full audio analysis is performed (duration, quality, etc.).\n"
+            "Uncheck for faster indexing without audio analysis."
+        )
+        button_layout.addWidget(self.extract_metadata_checkbox)
+   
         # Create action buttons
         self.index_button = QPushButton("Index Files")
         self.index_button.clicked.connect(self.start_indexing)
@@ -221,8 +229,14 @@ class MainWindow(QMainWindow):
             self.tab_widget.setCurrentWidget(self.settings_panel)
             return
         
+        # Get metadata extraction setting
+        extract_metadata = self.extract_metadata_checkbox.isChecked()
+        
         # Create progress dialog (non-modal)
-        self.progress_dialog = QProgressDialog("Indexing files...", "Cancel", 0, 100, self)
+        self.progress_dialog = QProgressDialog(
+            f"Indexing files with {'full' if extract_metadata else 'basic'} metadata extraction...", 
+            "Cancel", 0, 100, self
+        )
         self.progress_dialog.setWindowTitle("Indexing")
         self.progress_dialog.setWindowModality(Qt.NonModal)
         self.progress_dialog.setMinimumDuration(0)
@@ -235,6 +249,7 @@ class MainWindow(QMainWindow):
         # Start indexing in background thread
         self.music_indexer.index_files_async(
             recursive=True,
+            extract_metadata=extract_metadata,
             callback=self.update_index_progress,
             complete_callback=self.indexing_completed
         )

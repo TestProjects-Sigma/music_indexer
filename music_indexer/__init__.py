@@ -146,17 +146,18 @@ class MusicIndexer:
             self.indexing_in_progress = False
             return False  
      
-    def index_files_async(self, recursive=True, callback=None, complete_callback=None):
+    def index_files_async(self, recursive=True, extract_metadata=True, callback=None, complete_callback=None):
         """
         Index music files asynchronously using Qt's thread pool.
         
         Args:
             recursive (bool): Whether to scan subdirectories
+            extract_metadata (bool): Whether to extract full audio metadata (slower) or just basic file info
             callback (function): Optional callback function to report progress
             complete_callback (function): Optional callback function called when indexing completes
         """
         # Create worker
-        worker = IndexingWorker(self, recursive)
+        worker = IndexingWorker(self, recursive, extract_metadata)
         
         # Connect signals
         if callback:
@@ -166,7 +167,7 @@ class MusicIndexer:
         
         # Start worker
         QThreadPool.globalInstance().start(worker)
-        logger.info("Started indexing worker")
+        logger.info(f"Started indexing worker with extract_metadata={extract_metadata}")
         
         # Store worker reference to prevent garbage collection
         self._current_worker = worker
@@ -366,6 +367,82 @@ class MusicIndexer:
         self.string_matcher.set_threshold(threshold)
         self.config_manager.set_similarity_threshold(threshold)
 
+    def index_files(self, recursive=True, extract_metadata=True, callback=None):
+        """
+        Index music files in configured directories.
+        
+        Args:
+            recursive (bool): Whether to scan subdirectories
+            extract_metadata (bool): Whether to extract full audio metadata (slower) or just basic file info
+            callback (function): Optional callback function to report progress
+        
+        Returns:
+            bool: True if indexing completed successfully, False otherwise
+        """
+        if self.indexing_in_progress:
+            logger.warning("Indexing already in progress")
+            return False
+        
+        self.indexing_in_progress = True
+        
+        try:
+            # Get music directories
+            directories = self.get_music_directories()
+            
+            if not directories:
+                logger.warning("No music directories configured")
+                self.indexing_in_progress = False
+                return False
+            
+            # Scan directories for audio files
+            logger.info(f"Starting file scan in {len(directories)} directories")
+            audio_files = self.file_scanner.scan_multiple_directories(directories, recursive)
+            
+            if not audio_files:
+                logger.warning("No audio files found in configured directories")
+                self.indexing_in_progress = False
+                return False
+            
+            logger.info(f"Found {len(audio_files)} audio files")
+            
+            # Clean missing files from cache
+            self.cache_manager.clean_missing_files()
+            
+            # Extract metadata and cache
+            logger.info(f"Extracting {'full' if extract_metadata else 'basic'} metadata and updating cache")
+            
+            total_files = len(audio_files)
+            
+            # Process files one by one
+            for i, file_path in enumerate(audio_files):
+                # Extract metadata based on the extract_metadata flag
+                if extract_metadata:
+                    metadata = self.metadata_extractor.extract_metadata(file_path)
+                else:
+                    metadata = self.metadata_extractor.extract_basic_metadata(file_path)
+                
+                if metadata:
+                    # Cache metadata directly
+                    self.cache_manager.cache_file_metadata(metadata)
+                
+                # Report progress
+                if callback:
+                    progress = (i + 1) / total_files * 100
+                    callback(progress, f"Processed {i + 1} of {total_files} files")
+            
+            # Get cache stats
+            stats = self.cache_manager.get_cache_stats()
+            logger.info(f"Indexing completed. Cache contains {stats['total_files']} files")
+            
+            self.indexing_in_progress = False
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error during indexing: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.indexing_in_progress = False
+            return False
 
 from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
@@ -377,11 +454,12 @@ class IndexingWorker(QRunnable):
         progress = pyqtSignal(float, str)
         finished = pyqtSignal(bool)
         
-    def __init__(self, music_indexer, recursive=True):
+    def __init__(self, music_indexer, recursive=True, extract_metadata=True):
         """Initialize the worker."""
         super().__init__()
         self.music_indexer = music_indexer
         self.recursive = recursive
+        self.extract_metadata = extract_metadata
         self.signals = self.Signals()
         self.cancelled = False
     
@@ -413,7 +491,7 @@ class IndexingWorker(QRunnable):
             self.music_indexer.cache_manager.clean_missing_files()
             
             # Extract metadata and cache
-            logger.info("Extracting metadata and updating cache")
+            logger.info(f"Extracting {'full' if self.extract_metadata else 'basic'} metadata and updating cache")
             
             total_files = len(audio_files)
             
@@ -424,8 +502,11 @@ class IndexingWorker(QRunnable):
                     self.signals.finished.emit(False)
                     return
                 
-                # Extract metadata
-                metadata = self.music_indexer.metadata_extractor.extract_metadata(file_path)
+                # Extract metadata based on the extract_metadata flag
+                if self.extract_metadata:
+                    metadata = self.music_indexer.metadata_extractor.extract_metadata(file_path)
+                else:
+                    metadata = self.music_indexer.metadata_extractor.extract_basic_metadata(file_path)
                 
                 if metadata:
                     # Cache metadata directly

@@ -251,3 +251,55 @@ class MetadataExtractor:
                     metadata['title_from_filename'] = True
         
         return metadata
+
+# Add a new method to the MetadataExtractor class that skips audio analysis
+    def extract_basic_metadata(self, file_path):
+        """
+        Extract only basic metadata from a file without audio analysis.
+        This is much faster than full metadata extraction.
+        
+        Args:
+            file_path (str): Path to audio file
+            
+        Returns:
+            dict: Basic metadata or None if extraction failed
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            return None
+        
+        try:
+            # Get basic file information
+            filename = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            ext = self._get_file_extension(file_path)
+            
+            # Create basic metadata
+            metadata = {
+                'file_path': file_path,
+                'filename': filename,
+                'format': ext,
+                'file_size': file_size,
+                # Set default values for audio-specific fields
+                'duration': 0,
+                'bitrate': 0,
+                'sample_rate': 0,
+                'channels': 0
+            }
+            
+            # Try to parse artist/title from filename
+            artist, title = self._parse_filename(filename)
+            
+            if artist:
+                metadata['artist'] = artist
+                metadata['artist_from_filename'] = True
+            
+            if title:
+                metadata['title'] = title
+                metadata['title_from_filename'] = True
+            
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Error extracting basic metadata from {file_path}: {str(e)}")
+            return None
