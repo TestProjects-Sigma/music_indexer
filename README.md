@@ -7,6 +7,7 @@ A Python application for indexing and searching large music collections, with su
 - **Multi-format Support**: Index audio files in MP3, FLAC, M4A, AAC, and WAV formats.
 - **Metadata Extraction**: Extract and store information about audio files including artist, title, album, bitrate, and duration.
 - **Optional Metadata Processing**: Toggle between fast indexing (basic file info only) and complete indexing (with full audio analysis).
+- **Theme Support**: Choose between Light and Dark themes to customize the application appearance.
 - **Flexible Search**: Two search modes:
   - **Manual Search**: Search for music by artist, title, or general query.
   - **Automatic Search**: Match music from a text file containing artist/title pairs.
@@ -48,6 +49,14 @@ New indexing options for improved performance:
 - **Toggle Controls**: Easily switch between fast indexing and full audio analysis
 - **Smart Caching**: Files indexed with basic info can be updated later with full metadata
 - **Progress Indicators**: Clear indication of which extraction mode is being used
+
+## Theme Support
+The application supports multiple visual themes:
+
+- **Dark Theme**: A modern dark interface for comfortable use in low-light environments
+- **Light Theme**: A clean, bright interface for high-visibility usage
+- **System Default**: Uses your operating system's native look and feel
+- **Persistent Settings**: Your theme preference is saved between sessions
 
 ## Enhanced Search Results
 The automatic search feature now provides better visibility:
@@ -97,6 +106,7 @@ python main.py
 2. Click "Index Files" to scan and index your music collection.
    - Use the "Extract Audio Metadata" checkbox to toggle between fast and complete indexing
 3. Adjust search settings like similarity threshold as needed.
+4. Choose your preferred theme in the Appearance section.
 
 ### Searching Music
 
@@ -173,6 +183,7 @@ music_indexer/
 - **No Files Found**: Ensure your music directories are correctly configured in Settings.
 - **Slow Indexing**: For large collections, use the "Extract Audio Metadata" option to toggle faster indexing without audio analysis.
 - **Match Quality**: Adjust the similarity threshold in the Settings or Search tab if matches are too strict or too loose.
+- **Theme Not Applying**: If the theme doesn't change immediately, try saving settings and restarting the application.
 
 ### Logs
 
