@@ -117,6 +117,7 @@ class CacheManager:
             artist_from_filename = metadata.get('artist_from_filename', False)
             title_from_filename = metadata.get('title_from_filename', False)
             bits_per_sample = metadata.get('bits_per_sample', 0)
+            basic_metadata_only = metadata.get('basic_metadata_only', False)
             
             # Get file modification time
             last_modified = os.path.getmtime(file_path) if os.path.exists(file_path) else 0
@@ -129,7 +130,7 @@ class CacheManager:
                     'file_path', 'filename', 'format', 'duration', 'bitrate', 
                     'sample_rate', 'channels', 'artist', 'title', 'album', 
                     'year', 'genre', 'artist_from_filename', 'title_from_filename',
-                    'bits_per_sample'
+                    'bits_per_sample', 'basic_metadata_only'
                 ]:
                     extra_data[key] = value
             
@@ -142,14 +143,21 @@ class CacheManager:
             logger.debug("Checking if file already exists in database")
             
             # Check if file already exists in database
-            cursor.execute('SELECT id, last_modified FROM files WHERE file_path = ?', (file_path,))
+            cursor.execute('SELECT id, last_modified, duration FROM files WHERE file_path = ?', (file_path,))
             result = cursor.fetchone()
             
             if result:
-                # Update existing record if file has been modified
-                file_id, stored_last_modified = result
+                # Update existing record if file has been modified or if we're upgrading from basic to full metadata
+                file_id, stored_last_modified, stored_duration = result
                 
-                if last_modified > stored_last_modified:
+                # Update if:
+                # 1. File has been modified since last scan, OR
+                # 2. Current metadata has audio info (duration > 0) but stored record doesn't, OR
+                # 3. Current metadata is complete but the stored record has only basic info
+                if (last_modified > stored_last_modified or 
+                    (duration > 0 and stored_duration == 0) or 
+                    (not basic_metadata_only and stored_duration == 0)):
+                    
                     logger.debug(f"Updating existing record for {file_path}")
                     
                     cursor.execute('''
@@ -179,7 +187,7 @@ class CacheManager:
                         last_modified, last_scanned, extra_data_json, file_id
                     ))
                 else:
-                    logger.debug(f"File hasn't been modified, skipping update for {file_path}")
+                    logger.debug(f"File hasn't been modified and already has full metadata, skipping update for {file_path}")
             else:
                 # Insert new record
                 logger.debug(f"Inserting new record for {file_path}")

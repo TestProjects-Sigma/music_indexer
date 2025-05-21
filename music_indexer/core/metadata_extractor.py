@@ -252,7 +252,7 @@ class MetadataExtractor:
         
         return metadata
 
-# Add a new method to the MetadataExtractor class that skips audio analysis
+        # Add a new method to the MetadataExtractor class that skips audio analysis
     def extract_basic_metadata(self, file_path):
         """
         Extract only basic metadata from a file without audio analysis.
@@ -284,7 +284,9 @@ class MetadataExtractor:
                 'duration': 0,
                 'bitrate': 0,
                 'sample_rate': 0,
-                'channels': 0
+                'channels': 0,
+                # Add a flag to indicate this is basic metadata only
+                'basic_metadata_only': True
             }
             
             # Try to parse artist/title from filename
