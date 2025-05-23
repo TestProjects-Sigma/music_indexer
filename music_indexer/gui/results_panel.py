@@ -1,5 +1,5 @@
 """
-Results panel GUI with grouped results for the music indexer application.
+Enhanced results panel GUI with auto-selection and bulk operations for the music indexer application.
 """
 import os
 import sys
@@ -8,9 +8,9 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMessageBox, QProgressDialog, QCheckBox,
-    QMenu, QStyle
+    QMenu, QStyle, QGroupBox, QButtonGroup
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtGui import QColor, QCursor, QIcon, QBrush
 
 from ..utils.logger import get_logger
@@ -18,8 +18,8 @@ from ..utils.logger import get_logger
 logger = get_logger()
 
 
-class ResultsPanel(QWidget):
-    """Results panel for the Music Indexer application."""
+class EnhancedResultsPanel(QWidget):
+    """Enhanced results panel with auto-selection and bulk operations for the Music Indexer application."""
     
     def __init__(self, music_indexer):
         """Initialize the results panel."""
@@ -27,7 +27,8 @@ class ResultsPanel(QWidget):
         
         self.music_indexer = music_indexer
         self.current_results = []
-        self.grouped_results = {}  # Dictionary to store grouped results
+        self.grouped_results = {}
+        self.auto_selected_files = set()  # Track auto-selected files
         
         # Set up UI
         self.init_ui()
@@ -35,18 +36,43 @@ class ResultsPanel(QWidget):
         # Load settings
         self.load_settings()
         
-        logger.info("Results panel initialized")
+        logger.info("Enhanced results panel initialized")
     
     def init_ui(self):
         """Initialize the user interface."""
         # Create main layout
         main_layout = QVBoxLayout(self)
         
-        # Create results tree
+        # Create bulk selection controls
+        selection_group = QGroupBox("Bulk Selection")
+        selection_layout = QHBoxLayout(selection_group)
+        
+        self.auto_select_button = QPushButton("Auto-Select Best Matches")
+        self.auto_select_button.clicked.connect(self.auto_select_best_matches)
+        self.auto_select_button.setToolTip("Automatically select the best match for each entry based on preferences")
+        selection_layout.addWidget(self.auto_select_button)
+        
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self.select_all_matches)
+        selection_layout.addWidget(self.select_all_button)
+        
+        self.deselect_all_button = QPushButton("Deselect All")
+        self.deselect_all_button.clicked.connect(self.deselect_all_matches)
+        selection_layout.addWidget(self.deselect_all_button)
+        
+        selection_layout.addStretch()
+        
+        # Selection summary
+        self.selection_summary_label = QLabel("No files selected")
+        selection_layout.addWidget(self.selection_summary_label)
+        
+        main_layout.addWidget(selection_group)
+        
+        # Create results tree with checkbox column
         self.results_tree = QTreeWidget()
-        self.results_tree.setColumnCount(7)
+        self.results_tree.setColumnCount(8)
         self.results_tree.setHeaderLabels([
-            "Source/Filename", "Artist", "Title", "Format", "Duration", "Bitrate", "Match Score"
+            "☐", "Source/Filename", "Artist", "Title", "Format", "Duration", "Bitrate", "Match Score"
         ])
         
         # Set tree properties
@@ -57,16 +83,18 @@ class ResultsPanel(QWidget):
         self.results_tree.itemExpanded.connect(self.on_item_expanded)
         self.results_tree.itemCollapsed.connect(self.on_item_collapsed)
         self.results_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+        self.results_tree.itemChanged.connect(self.on_item_changed)
         
         # Set column widths
         header = self.results_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Source/Filename
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Artist
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Title
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Format
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Duration
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Bitrate
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Match Score
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Checkbox column
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # Source/Filename
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Artist
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Title
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Format
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Duration
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Bitrate
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Match Score
         
         # Add tree to layout
         main_layout.addWidget(self.results_tree)
@@ -75,20 +103,21 @@ class ResultsPanel(QWidget):
         self.status_label = QLabel("No results to display")
         main_layout.addWidget(self.status_label)
         
-        # Create button layout
+        # Create enhanced button layout
         button_layout = QHBoxLayout()
+        
+        # Copy selected files button (enhanced)
+        self.copy_selected_button = QPushButton("Copy Selected Files")
+        self.copy_selected_button.clicked.connect(self.copy_selected_files)
+        self.copy_selected_button.setEnabled(False)
+        self.copy_selected_button.setStyleSheet("font-weight: bold;")
+        button_layout.addWidget(self.copy_selected_button)
         
         # Add "Show in Folder" button
         self.show_folder_button = QPushButton("Show in Folder")
         self.show_folder_button.clicked.connect(self.show_in_folder)
         self.show_folder_button.setEnabled(False)
         button_layout.addWidget(self.show_folder_button)
-        
-        # Add "Copy to Folder" button
-        self.copy_button = QPushButton("Copy to Folder")
-        self.copy_button.clicked.connect(self.copy_to_folder)
-        self.copy_button.setEnabled(False)
-        button_layout.addWidget(self.copy_button)
         
         # Add "Export Results" button
         self.export_button = QPushButton("Export Results")
@@ -108,9 +137,310 @@ class ResultsPanel(QWidget):
         # Connect signals
         self.results_tree.itemSelectionChanged.connect(self.update_button_states)
     
+    def on_item_changed(self, item, column):
+        """Handle item checkbox changes."""
+        if column == 0:  # Checkbox column
+            file_path = item.data(0, Qt.UserRole + 1)
+            if file_path:
+                if item.checkState(0) == Qt.Checked:
+                    self.auto_selected_files.add(file_path)
+                else:
+                    self.auto_selected_files.discard(file_path)
+                self.update_selection_summary()
+                self.update_button_states()
+    
+    def update_selection_summary(self):
+        """Update the selection summary label."""
+        selected_count = len(self.auto_selected_files)
+        if selected_count == 0:
+            self.selection_summary_label.setText("No files selected")
+        elif selected_count == 1:
+            self.selection_summary_label.setText("1 file selected")
+        else:
+            self.selection_summary_label.setText(f"{selected_count} files selected")
+    
+    def auto_select_best_matches(self):
+        """Automatically select the best match for each entry based on user preferences."""
+        if not self.grouped_results:
+            QMessageBox.information(self, "No Results", "No grouped results available for auto-selection.")
+            return
+        
+        # Get auto-selection preferences
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        
+        if not settings.value("auto_select/enabled", True, type=bool):
+            QMessageBox.information(self, "Auto-Select Disabled", 
+                                  "Auto-selection is disabled. Enable it in Settings to use this feature.")
+            return
+        
+        min_score = settings.value("auto_select/min_score", 80, type=int)
+        format_preferences = settings.value("auto_select/format_preferences", ["flac", "mp3", "m4a", "aac", "wav"])
+        prefer_higher_bitrate = settings.value("auto_select/prefer_higher_bitrate", True, type=bool)
+        score_tolerance = settings.value("auto_select/score_tolerance", 5, type=int)
+        
+        # Clear existing selections
+        self.deselect_all_matches()
+        
+        auto_selected_count = 0
+        
+        # Process each group
+        for i in range(self.results_tree.topLevelItemCount()):
+            parent_item = self.results_tree.topLevelItem(i)
+            
+            if parent_item.childCount() == 0:
+                continue  # Skip entries with no matches
+            
+            # Find the best match for this group
+            best_match = self.find_best_match(parent_item, min_score, format_preferences, 
+                                            prefer_higher_bitrate, score_tolerance)
+            
+            if best_match:
+                # Check the best match
+                best_match.setCheckState(0, Qt.Checked)
+                file_path = best_match.data(0, Qt.UserRole + 1)
+                if file_path:
+                    self.auto_selected_files.add(file_path)
+                    auto_selected_count += 1
+        
+        self.update_selection_summary()
+        self.update_button_states()
+        
+        QMessageBox.information(self, "Auto-Selection Complete", 
+                              f"Automatically selected {auto_selected_count} best matches based on your preferences.")
+    
+    def find_best_match(self, parent_item, min_score, format_preferences, prefer_higher_bitrate, score_tolerance):
+        """Find the best match for a group based on preferences."""
+        candidates = []
+        
+        # Collect all matches that meet minimum score
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            score_text = child.text(7)  # Match score column
+            
+            try:
+                score = float(score_text.replace('%', ''))
+                if score >= min_score:
+                    candidates.append({
+                        'item': child,
+                        'score': score,
+                        'format': child.text(4).lower(),  # Format column
+                        'bitrate': self.extract_bitrate(child.text(6))  # Bitrate column
+                    })
+            except (ValueError, AttributeError):
+                continue
+        
+        if not candidates:
+            return None
+        
+        # Sort by score (highest first)
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        
+        best_candidate = candidates[0]
+        
+        # Check if there are candidates with preferred format within score tolerance
+        for candidate in candidates:
+            score_diff = best_candidate['score'] - candidate['score']
+            
+            if score_diff <= score_tolerance:
+                # Check format preference
+                try:
+                    candidate_format_index = format_preferences.index(candidate['format'])
+                    best_format_index = format_preferences.index(best_candidate['format']) if best_candidate['format'] in format_preferences else len(format_preferences)
+                    
+                    # If candidate has better format preference, use it
+                    if candidate_format_index < best_format_index:
+                        best_candidate = candidate
+                        continue
+                    
+                    # If same format preference and we prefer higher bitrate
+                    if (candidate_format_index == best_format_index and 
+                        prefer_higher_bitrate and 
+                        candidate['bitrate'] > best_candidate['bitrate']):
+                        best_candidate = candidate
+                        
+                except ValueError:
+                    # Format not in preferences, skip format comparison
+                    if prefer_higher_bitrate and candidate['bitrate'] > best_candidate['bitrate']:
+                        best_candidate = candidate
+        
+        return best_candidate['item']
+    
+    def extract_bitrate(self, bitrate_text):
+        """Extract numeric bitrate from text like '320 kbps'."""
+        try:
+            return int(bitrate_text.replace(' kbps', '').replace('kbps', ''))
+        except (ValueError, AttributeError):
+            return 0
+    
+    def select_all_matches(self):
+        """Select all available matches."""
+        self.auto_selected_files.clear()
+        
+        for i in range(self.results_tree.topLevelItemCount()):
+            parent_item = self.results_tree.topLevelItem(i)
+            
+            for j in range(parent_item.childCount()):
+                child = parent_item.child(j)
+                file_path = child.data(0, Qt.UserRole + 1)
+                if file_path:
+                    child.setCheckState(0, Qt.Checked)
+                    self.auto_selected_files.add(file_path)
+        
+        self.update_selection_summary()
+        self.update_button_states()
+    
+    def deselect_all_matches(self):
+        """Deselect all matches."""
+        self.auto_selected_files.clear()
+        
+        for i in range(self.results_tree.topLevelItemCount()):
+            parent_item = self.results_tree.topLevelItem(i)
+            
+            for j in range(parent_item.childCount()):
+                child = parent_item.child(j)
+                child.setCheckState(0, Qt.Unchecked)
+        
+        self.update_selection_summary()
+        self.update_button_states()
+    
+    def copy_selected_files(self):
+        """Copy all selected files to destination folder."""
+        if not self.auto_selected_files:
+            QMessageBox.warning(self, "No Selection", "No files are selected for copying.")
+            return
+        
+        # Get default export directory from config
+        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        if not default_dir or not os.path.exists(default_dir):
+            default_dir = os.path.expanduser("~")
+        
+        # Get destination folder
+        destination = QFileDialog.getExistingDirectory(
+            self,
+            "Select Destination Folder",
+            default_dir,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not destination:
+            return
+        
+        # Copy the selected files
+        self.copy_files_to_destination(list(self.auto_selected_files), destination)
+    
+    def copy_files_to_destination(self, file_paths, destination):
+        """Copy files to destination with progress dialog."""
+        if not os.path.exists(destination):
+            try:
+                os.makedirs(destination)
+                logger.info(f"Created destination directory: {destination}")
+            except Exception as e:
+                logger.error(f"Failed to create destination directory: {str(e)}")
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"Failed to create destination directory:\n{destination}\n\nError: {str(e)}"
+                )
+                return
+        
+        # Create progress dialog
+        self.copy_progress = QProgressDialog("Preparing to copy files...", "Cancel", 0, 100, self)
+        self.copy_progress.setWindowTitle("Copying Selected Files")
+        self.copy_progress.setWindowModality(Qt.NonModal)
+        self.copy_progress.setMinimumDuration(0)
+        self.copy_progress.setAutoClose(True)
+        self.copy_progress.setAutoReset(False)
+        
+        # Set up copy operation
+        total_files = len(file_paths)
+        self.copy_progress.setMaximum(total_files)
+        self.copy_progress.setValue(0)
+        self.copy_progress.show()
+        
+        # Create timer for non-blocking copy
+        self.copy_timer = QTimer()
+        self.copy_index = 0
+        self.file_paths_to_copy = file_paths
+        self.destination_dir = destination
+        self.copy_success_count = 0
+        self.copy_failed_files = {}
+        
+        self.copy_timer.timeout.connect(self.copy_next_file)
+        self.copy_timer.start(10)
+    
+    def copy_next_file(self):
+        """Copy the next file in the queue."""
+        if self.copy_index >= len(self.file_paths_to_copy):
+            self.copy_timer.stop()
+            self.copy_operation_completed()
+            return
+        
+        src_path = self.file_paths_to_copy[self.copy_index]
+        
+        try:
+            filename = os.path.basename(src_path)
+            dest_path = os.path.join(self.destination_dir, filename)
+            
+            # Update progress
+            self.copy_progress.setLabelText(f"Copying {self.copy_index + 1} of {len(self.file_paths_to_copy)}: {filename}")
+            
+            # Handle duplicate filenames
+            if os.path.exists(dest_path):
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while os.path.exists(dest_path):
+                    dest_path = os.path.join(self.destination_dir, f"{base} ({counter}){ext}")
+                    counter += 1
+            
+            # Copy file
+            with open(src_path, 'rb') as src_file:
+                with open(dest_path, 'wb') as dest_file:
+                    dest_file.write(src_file.read())
+            
+            self.copy_success_count += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to copy file {src_path}: {str(e)}")
+            self.copy_failed_files[src_path] = str(e)
+        
+        # Update progress
+        self.copy_index += 1
+        self.copy_progress.setValue(self.copy_index)
+        
+        # Check if canceled
+        if self.copy_progress.wasCanceled():
+            self.copy_timer.stop()
+            self.copy_operation_completed()
+    
+    def copy_operation_completed(self):
+        """Handle copy operation completion."""
+        if hasattr(self, 'copy_progress') and self.copy_progress:
+            self.copy_progress.close()
+        
+        total_files = len(self.file_paths_to_copy)
+        
+        # Show results
+        if self.copy_failed_files:
+            failed_count = len(self.copy_failed_files)
+            error_message = f"Successfully copied {self.copy_success_count} of {total_files} files.\n\n"
+            error_message += f"{failed_count} files failed to copy:\n\n"
+            
+            for path, error in list(self.copy_failed_files.items())[:5]:  # Show first 5 errors
+                error_message += f"• {os.path.basename(path)}: {error}\n"
+            
+            if failed_count > 5:
+                error_message += f"... and {failed_count - 5} more files."
+            
+            QMessageBox.warning(self, "Copy Completed with Errors", error_message)
+        else:
+            QMessageBox.information(
+                self,
+                "Copy Complete",
+                f"Successfully copied all {self.copy_success_count} selected files to:\n{self.destination_dir}"
+            )
+    
     def on_item_expanded(self, item):
         """Handle item expansion."""
-        # Store expanded state
         key = item.data(0, Qt.UserRole)
         if key:
             settings = QSettings("MusicIndexer", "MusicIndexer")
@@ -121,7 +451,6 @@ class ResultsPanel(QWidget):
     
     def on_item_collapsed(self, item):
         """Handle item collapse."""
-        # Store collapsed state
         key = item.data(0, Qt.UserRole)
         if key:
             settings = QSettings("MusicIndexer", "MusicIndexer")
@@ -133,6 +462,9 @@ class ResultsPanel(QWidget):
     def set_results(self, results):
         """Set search results."""
         self.current_results = results
+        
+        # Clear previous selections
+        self.auto_selected_files.clear()
         
         # Check if results are from auto_search (containing 'line' field)
         self.is_auto_search = any(
@@ -159,6 +491,12 @@ class ResultsPanel(QWidget):
                 }
             
             self.display_grouped_results()
+            
+            # Auto-select best matches if enabled
+            settings = QSettings("MusicIndexer", "MusicIndexer")
+            if settings.value("auto_select/enabled", True, type=bool):
+                # Small delay to ensure UI is ready
+                QTimer.singleShot(100, self.auto_select_best_matches)
         else:
             # Regular search results
             self.display_flat_results()
@@ -177,7 +515,6 @@ class ResultsPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         expanded_items = settings.value("results/expanded_items", [])
         
-        # Populate tree with grouped results
         missing_count = 0
         total_matches = 0
         
@@ -196,32 +533,27 @@ class ResultsPanel(QWidget):
             
             # Create parent item for the group
             parent_item = QTreeWidgetItem(self.results_tree)
-            
-            # Store line info in the item's user data
             parent_item.setData(0, Qt.UserRole, key)
             
             # Set item text
             if match_count == 0:
                 status_text = "❌ Missing"
                 missing_count += 1
-                # Red color for missing
-                parent_item.setForeground(0, QBrush(QColor(200, 0, 0)))
+                parent_item.setForeground(1, QBrush(QColor(200, 0, 0)))
             else:
                 if match_count == 1:
                     status_text = "✓ Found"
-                    # Green color for found
-                    parent_item.setForeground(0, QBrush(QColor(0, 128, 0)))
+                    parent_item.setForeground(1, QBrush(QColor(0, 128, 0)))
                 else:
                     status_text = f"⚠ Multiple ({match_count})"
-                    # Orange color for multiple
-                    parent_item.setForeground(0, QBrush(QColor(255, 140, 0)))
+                    parent_item.setForeground(1, QBrush(QColor(255, 140, 0)))
                 
                 total_matches += match_count
             
             # Set display text for parent item
-            parent_item.setText(0, f"{status_text}: {line}")
-            parent_item.setText(1, artist)
-            parent_item.setText(2, title)
+            parent_item.setText(1, f"{status_text}: {line}")
+            parent_item.setText(2, artist)
+            parent_item.setText(3, title)
             
             # Add matches as child items
             for match in matches:
@@ -229,43 +561,46 @@ class ResultsPanel(QWidget):
                 filename = os.path.basename(file_path)
                 
                 child_item = QTreeWidgetItem(parent_item)
-                child_item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
+                child_item.setData(0, Qt.UserRole + 1, file_path)
                 
-                child_item.setText(0, filename)
-                child_item.setText(1, match.get('artist', ''))
-                child_item.setText(2, match.get('title', ''))
-                child_item.setText(3, match.get('format', ''))
+                # Add checkbox
+                child_item.setFlags(child_item.flags() | Qt.ItemIsUserCheckable)
+                child_item.setCheckState(0, Qt.Unchecked)
+                
+                child_item.setText(1, filename)
+                child_item.setText(2, match.get('artist', ''))
+                child_item.setText(3, match.get('title', ''))
+                child_item.setText(4, match.get('format', ''))
                 
                 # Duration
                 duration = match.get('duration', 0)
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
                 duration_text = f"{minutes}:{seconds:02d}"
-                child_item.setText(4, duration_text)
+                child_item.setText(5, duration_text)
                 
                 # Bitrate
                 bitrate = match.get('bitrate', 0)
-                child_item.setText(5, f"{bitrate} kbps")
+                child_item.setText(6, f"{bitrate} kbps")
                 
                 # Match score
                 score = match.get('combined_score', 0)
-                child_item.setText(6, f"{score:.1f}%")
+                child_item.setText(7, f"{score:.1f}%")
                 
                 # Color code match score
                 if score >= 90:
-                    child_item.setBackground(6, QColor(200, 255, 200))  # Light green
+                    child_item.setBackground(7, QColor(200, 255, 200))
                 elif score >= 80:
-                    child_item.setBackground(6, QColor(220, 255, 220))  # Lighter green
+                    child_item.setBackground(7, QColor(220, 255, 220))
                 elif score >= 70:
-                    child_item.setBackground(6, QColor(255, 255, 200))  # Light yellow
+                    child_item.setBackground(7, QColor(255, 255, 200))
                 else:
-                    child_item.setBackground(6, QColor(255, 220, 220))  # Light red
+                    child_item.setBackground(7, QColor(255, 220, 220))
             
             # Restore expanded state
             if key in expanded_items:
                 parent_item.setExpanded(True)
             elif match_count > 0:
-                # By default, expand if there are matches
                 parent_item.setExpanded(True)
         
         # Update status
@@ -278,7 +613,6 @@ class ResultsPanel(QWidget):
             f"{missing_count} missing"
         )
         
-        # Update button states
         self.update_button_states()
     
     def display_flat_results(self):
@@ -297,127 +631,97 @@ class ResultsPanel(QWidget):
             filename = os.path.basename(file_path)
             
             item = QTreeWidgetItem(self.results_tree)
-            item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
+            item.setData(0, Qt.UserRole + 1, file_path)
             
-            item.setText(0, filename)
-            item.setText(1, result.get('artist', ''))
-            item.setText(2, result.get('title', ''))
-            item.setText(3, result.get('format', ''))
+            # Add checkbox
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(0, Qt.Unchecked)
+            
+            item.setText(1, filename)
+            item.setText(2, result.get('artist', ''))
+            item.setText(3, result.get('title', ''))
+            item.setText(4, result.get('format', ''))
             
             # Duration
             duration = result.get('duration', 0)
             minutes = int(duration // 60)
             seconds = int(duration % 60)
             duration_text = f"{minutes}:{seconds:02d}"
-            item.setText(4, duration_text)
+            item.setText(5, duration_text)
             
             # Bitrate
             bitrate = result.get('bitrate', 0)
-            item.setText(5, f"{bitrate} kbps")
+            item.setText(6, f"{bitrate} kbps")
             
             # Match score
             score = result.get('combined_score', 0)
-            item.setText(6, f"{score:.1f}%")
+            item.setText(7, f"{score:.1f}%")
             
             # Color code match score
             if score >= 90:
-                item.setBackground(6, QColor(200, 255, 200))  # Light green
+                item.setBackground(7, QColor(200, 255, 200))
             elif score >= 80:
-                item.setBackground(6, QColor(220, 255, 220))  # Lighter green
+                item.setBackground(7, QColor(220, 255, 220))
             elif score >= 70:
-                item.setBackground(6, QColor(255, 255, 200))  # Light yellow
+                item.setBackground(7, QColor(255, 255, 200))
             else:
-                item.setBackground(6, QColor(255, 220, 220))  # Light red
+                item.setBackground(7, QColor(255, 220, 220))
         
         # Update status
         self.status_label.setText(f"Displaying {len(self.current_results)} results")
-        
-        # Update button states
         self.update_button_states()
     
     def update_button_states(self):
-        """Update button states based on selection."""
-        selected_items = self.results_tree.selectedItems()
-        
-        # Check if any file items (not group headers) are selected
-        has_file_selection = any(
-            item.data(0, Qt.UserRole + 1) is not None 
-            for item in selected_items
-        )
-        
+        """Update button states based on selection and available results."""
         has_results = self.results_tree.topLevelItemCount() > 0
+        has_selections = len(self.auto_selected_files) > 0
+        has_grouped_results = bool(self.grouped_results)
         
-        self.show_folder_button.setEnabled(has_file_selection)
-        self.copy_button.setEnabled(has_file_selection)
+        # Selection buttons
+        self.auto_select_button.setEnabled(has_grouped_results)
+        self.select_all_button.setEnabled(has_results)
+        self.deselect_all_button.setEnabled(has_results)
+        
+        # Action buttons
+        self.copy_selected_button.setEnabled(has_selections)
+        self.show_folder_button.setEnabled(has_selections)
         self.export_button.setEnabled(has_results)
         self.clear_button.setEnabled(has_results)
     
     def get_selected_file_paths(self):
-        """Get file paths of selected items."""
-        file_paths = []
-        
-        # Process all selected items
-        for item in self.results_tree.selectedItems():
-            # Check if this is a file item (not a group header)
-            file_path = item.data(0, Qt.UserRole + 1)
-            if file_path:
-                file_paths.append(file_path)
-            else:
-                # It's a group header, add all child file paths
-                for i in range(item.childCount()):
-                    child = item.child(i)
-                    child_path = child.data(0, Qt.UserRole + 1)
-                    if child_path:
-                        file_paths.append(child_path)
-        
-        # Remove duplicates while preserving order
-        unique_paths = []
-        for path in file_paths:
-            if path not in unique_paths:
-                unique_paths.append(path)
-        
-        return unique_paths
+        """Get file paths of selected (checked) items."""
+        return list(self.auto_selected_files)
     
     def show_context_menu(self, position):
         """Show context menu when right-clicking on a result item."""
-        # Check if there are any items in the tree
         if self.results_tree.topLevelItemCount() == 0:
             return
         
-        # Get the item under cursor
         item = self.results_tree.itemAt(position)
         if not item:
             return
         
-        # Check if item is a file or a group header
         is_file_item = item.data(0, Qt.UserRole + 1) is not None
         is_group_item = item.data(0, Qt.UserRole) is not None
         
-        # Create context menu
         context_menu = QMenu(self)
         
         if is_file_item:
             # File item menu
             show_action = context_menu.addAction("Show in Folder")
             play_action = context_menu.addAction("Play Audio")
-            copy_action = context_menu.addAction("Copy to Export Folder")
             
-            # Get default export directory for quick copy
-            default_export_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+            # Toggle selection action
+            file_path = item.data(0, Qt.UserRole + 1)
+            if file_path in self.auto_selected_files:
+                select_action = context_menu.addAction("Unselect File")
+            else:
+                select_action = context_menu.addAction("Select File")
             
             # Connect actions
-            show_action.triggered.connect(self.show_in_folder)
-            play_action.triggered.connect(lambda: self.play_audio_file(item.data(0, Qt.UserRole + 1)))
-            
-            if default_export_dir:
-                # If default export directory exists, enable direct copy
-                folder_name = os.path.basename(default_export_dir)
-                if folder_name:
-                    copy_action.setText(f"Copy to Export Folder ({folder_name})")
-                copy_action.triggered.connect(lambda: self.copy_to_export_folder(default_export_dir))
-            else:
-                # Otherwise, use standard copy dialog
-                copy_action.triggered.connect(self.copy_to_folder)
+            show_action.triggered.connect(lambda: self.show_in_folder_single(file_path))
+            play_action.triggered.connect(lambda: self.play_audio_file(file_path))
+            select_action.triggered.connect(lambda: self.toggle_file_selection(item))
         
         if is_group_item:
             # Group item menu
@@ -429,7 +733,17 @@ class ResultsPanel(QWidget):
                     expand_action = context_menu.addAction("Expand")
                     expand_action.triggered.connect(lambda: item.setExpanded(True))
                 
-                # Add option to expand/collapse all
+                context_menu.addSeparator()
+                
+                # Group selection actions
+                select_best_action = context_menu.addAction("Select Best Match in Group")
+                select_all_action = context_menu.addAction("Select All in Group")
+                deselect_all_action = context_menu.addAction("Deselect All in Group")
+                
+                select_best_action.triggered.connect(lambda: self.select_best_in_group(item))
+                select_all_action.triggered.connect(lambda: self.select_all_in_group(item))
+                deselect_all_action.triggered.connect(lambda: self.deselect_all_in_group(item))
+                
                 context_menu.addSeparator()
                 expand_all_action = context_menu.addAction("Expand All")
                 expand_all_action.triggered.connect(self.expand_all_groups)
@@ -445,140 +759,67 @@ class ResultsPanel(QWidget):
         clear_action = context_menu.addAction("Clear Results")
         clear_action.triggered.connect(self.clear_results)
         
-        # Show context menu
         context_menu.exec_(QCursor.pos())
+    
+    def toggle_file_selection(self, item):
+        """Toggle selection state of a file item."""
+        current_state = item.checkState(0)
+        new_state = Qt.Unchecked if current_state == Qt.Checked else Qt.Checked
+        item.setCheckState(0, new_state)
+    
+    def select_best_in_group(self, group_item):
+        """Select the best match in a specific group."""
+        if group_item.childCount() == 0:
+            return
+        
+        # Get preferences
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        min_score = settings.value("auto_select/min_score", 80, type=int)
+        format_preferences = settings.value("auto_select/format_preferences", ["flac", "mp3", "m4a", "aac", "wav"])
+        prefer_higher_bitrate = settings.value("auto_select/prefer_higher_bitrate", True, type=bool)
+        score_tolerance = settings.value("auto_select/score_tolerance", 5, type=int)
+        
+        # Deselect all in group first
+        self.deselect_all_in_group(group_item)
+        
+        # Find and select best match
+        best_match = self.find_best_match(group_item, min_score, format_preferences, 
+                                        prefer_higher_bitrate, score_tolerance)
+        if best_match:
+            best_match.setCheckState(0, Qt.Checked)
+    
+    def select_all_in_group(self, group_item):
+        """Select all matches in a specific group."""
+        for i in range(group_item.childCount()):
+            child = group_item.child(i)
+            child.setCheckState(0, Qt.Checked)
+    
+    def deselect_all_in_group(self, group_item):
+        """Deselect all matches in a specific group."""
+        for i in range(group_item.childCount()):
+            child = group_item.child(i)
+            child.setCheckState(0, Qt.Unchecked)
     
     def expand_all_groups(self):
         """Expand all group items."""
-        root = self.results_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            item = root.child(i)
+        for i in range(self.results_tree.topLevelItemCount()):
+            item = self.results_tree.topLevelItem(i)
             item.setExpanded(True)
     
     def collapse_all_groups(self):
         """Collapse all group items."""
-        root = self.results_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            item = root.child(i)
+        for i in range(self.results_tree.topLevelItemCount()):
+            item = self.results_tree.topLevelItem(i)
             item.setExpanded(False)
     
-    def copy_to_export_folder(self, export_dir):
-        """Copy selected files directly to the configured export folder."""
-        file_paths = self.get_selected_file_paths()
-        
-        if not file_paths:
-            return
-            
-        # Check if export directory exists
-        if not os.path.exists(export_dir):
-            try:
-                os.makedirs(export_dir)
-                logger.info(f"Created export directory: {export_dir}")
-            except Exception as e:
-                logger.error(f"Failed to create export directory: {str(e)}")
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    f"Failed to create export directory:\n{export_dir}\n\nError: {str(e)}"
-                )
-                return
-        
-        # Create progress dialog (non-modal)
-        from PyQt5.QtCore import QTimer
-        
-        self.copy_progress = QProgressDialog("Preparing to copy files...", "Cancel", 0, 100, self)
-        self.copy_progress.setWindowTitle("Copying")
-        self.copy_progress.setWindowModality(Qt.NonModal)  # Make non-modal
-        self.copy_progress.setMinimumDuration(0)
-        self.copy_progress.setAutoClose(True)
-        self.copy_progress.setAutoReset(False)
-        
-        # Use direct copy operation instead of async method for more reliability
-        try:
-            # Get total size for progress reporting
-            total_files = len(file_paths)
-            self.copy_progress.setMaximum(total_files)
-            self.copy_progress.setValue(0)
-            self.copy_progress.show()
-            
-            # Create a QTimer to handle copy operations without blocking UI
-            self.copy_timer = QTimer()
-            self.copy_index = 0
-            self.file_paths = file_paths
-            self.export_dir = export_dir
-            self.copy_success_count = 0
-            self.copy_failed_files = {}
-            
-            # Connect timer to copy next file
-            self.copy_timer.timeout.connect(self.copy_next_file)
-            self.copy_timer.start(10)  # Start timer
-        except Exception as e:
-            logger.error(f"Error starting copy operation: {str(e)}")
-            QMessageBox.warning(
-                self,
-                "Copy Failed",
-                f"Error starting copy operation: {str(e)}"
-            )
-    
-    def copy_next_file(self):
-        """Copy the next file in the queue."""
-        # Check if we're done
-        if self.copy_index >= len(self.file_paths):
-            self.copy_timer.stop()
-            self.copy_completed(self.copy_success_count, self.copy_failed_files)
-            return
-            
-        # Get current file path
-        src_path = self.file_paths[self.copy_index]
-        
-        try:
-            # Get filename
-            filename = os.path.basename(src_path)
-            dest_path = os.path.join(self.export_dir, filename)
-            
-            # Update progress dialog
-            self.copy_progress.setLabelText(f"Copying {self.copy_index + 1} of {len(self.file_paths)}: {filename}")
-            
-            # Check if destination file already exists
-            if os.path.exists(dest_path):
-                # Append number to filename to make it unique
-                base, ext = os.path.splitext(filename)
-                counter = 1
-                while os.path.exists(dest_path):
-                    dest_path = os.path.join(self.export_dir, f"{base} ({counter}){ext}")
-                    counter += 1
-            
-            # Copy file
-            with open(src_path, 'rb') as src_file:
-                with open(dest_path, 'wb') as dest_file:
-                    dest_file.write(src_file.read())
-            
-            self.copy_success_count += 1
-            
-        except Exception as e:
-            logger.error(f"Failed to copy file {src_path}: {str(e)}")
-            self.copy_failed_files[src_path] = str(e)
-        
-        # Update progress
-        self.copy_index += 1
-        self.copy_progress.setValue(self.copy_index)
-        
-        # Check if canceled
-        if self.copy_progress.wasCanceled():
-            self.copy_timer.stop()
-            self.copy_completed(self.copy_success_count, self.copy_failed_files)
-            return
-    
     def show_in_folder(self):
-        """Show selected file in folder."""
-        file_paths = self.get_selected_file_paths()
-        
-        if not file_paths:
-            return
-        
-        # Get first selected file
-        file_path = file_paths[0]
-        
+        """Show first selected file in folder."""
+        if self.auto_selected_files:
+            first_file = next(iter(self.auto_selected_files))
+            self.show_in_folder_single(first_file)
+    
+    def show_in_folder_single(self, file_path):
+        """Show specific file in folder."""
         if not os.path.exists(file_path):
             QMessageBox.warning(
                 self,
@@ -587,243 +828,22 @@ class ResultsPanel(QWidget):
             )
             return
         
-        # Log the file path for debugging
         logger.info(f"Showing file in folder: {file_path}")
         
-        # Open folder with file selected
         try:
             if os.name == 'nt':  # Windows
-                # Ensure the path uses backslashes
                 file_path = os.path.normpath(file_path)
-                
-                # Method 1: Use subprocess with explorer /select
-                import subprocess
                 subprocess.run(['explorer', '/select,', file_path], shell=True)
-                
-                # If the above doesn't work, try an alternative approach
-                # Method 2: Just open the containing folder
-                # folder_path = os.path.dirname(file_path)
-                # os.startfile(folder_path)
-            
             elif os.name == 'posix':  # macOS and Linux
                 folder_path = os.path.dirname(file_path)
                 if sys.platform == 'darwin':  # macOS
                     subprocess.run(['open', folder_path])
                 else:  # Linux
                     subprocess.run(['xdg-open', folder_path])
-        
         except Exception as e:
             logger.error(f"Error showing file in folder: {str(e)}")
-            
-            # Fallback: just open the parent directory
-            try:
-                folder_path = os.path.dirname(file_path)
-                if os.name == 'nt':  # Windows
-                    os.startfile(folder_path)
-                elif os.name == 'posix':  # macOS and Linux
-                    if sys.platform == 'darwin':  # macOS
-                        subprocess.run(['open', folder_path])
-                    else:  # Linux
-                        subprocess.run(['xdg-open', folder_path])
-            except Exception as fallback_error:
-                logger.error(f"Fallback error: {str(fallback_error)}")
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    f"Could not open folder: {str(e)}\nFile path: {file_path}"
-                )
+            QMessageBox.warning(self, "Error", f"Could not open folder: {str(e)}")
     
-    def copy_to_folder(self):
-        """Copy selected files to a folder."""
-        file_paths = self.get_selected_file_paths()
-        
-        if not file_paths:
-            return
-        
-        # Get default export directory from config
-        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
-        if not default_dir or not os.path.exists(default_dir):
-            default_dir = os.path.expanduser("~")
-        
-        # Get destination folder
-        destination = QFileDialog.getExistingDirectory(
-            self,
-            "Select Destination Folder",
-            default_dir,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        
-        if not destination:
-            return
-        
-        # Use the copy to export folder method
-        self.copy_to_export_folder(destination)
-
-    def copy_completed(self, success_count, failed_files):
-        """Handle copy completion."""
-        # Close progress dialog
-        if hasattr(self, 'copy_progress') and self.copy_progress:
-            self.copy_progress.close()
-        
-        total_files = success_count + len(failed_files)
-        
-        if failed_files:
-            error_message = "The following files could not be copied:\n\n"
-            for path, error in failed_files.items():
-                error_message += f"{os.path.basename(path)}: {error}\n"
-            
-            QMessageBox.warning(
-                self,
-                "Copy Failed",
-                error_message
-            )
-        
-        if success_count > 0:
-            QMessageBox.information(
-                self,
-                "Copy Complete",
-                f"Successfully copied {success_count} of {total_files} files."
-            )
-    
-    def export_results(self):
-        """Export search results to a file."""
-        if self.results_tree.topLevelItemCount() == 0:
-            return
-        
-        # Get default export directory from config
-        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
-        if not default_dir or not os.path.exists(default_dir):
-            default_dir = os.path.expanduser("~")
-        
-        default_path = os.path.join(default_dir, "music_search_results.csv")
-        
-        # Get file path
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Results",
-            default_path,
-            "CSV Files (*.csv);;Text Files (*.txt);;All Files (*.*)"
-        )
-        
-        if not file_path:
-            return
-        
-        try:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                if self.is_auto_search:
-                    # Export grouped results with status
-                    file.write("Status,Source Line,Artist,Title,Match Count,Filename,Format,Duration,Bitrate,Match Score,File Path\n")
-                    
-                    for i in range(self.results_tree.topLevelItemCount()):
-                        parent = self.results_tree.topLevelItem(i)
-                        source_line = parent.text(0)
-                        artist = parent.text(1)
-                        title = parent.text(2)
-                        match_count = parent.childCount()
-                        
-                        if match_count == 0:
-                            status = "Missing"
-                            # Write header row
-                            file.write(f'"{status}","{source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
-                        else:
-                            if match_count == 1:
-                                status = "Found"
-                            else:
-                                status = "Multiple"
-                            
-                            # Write header row
-                            file.write(f'"{status}","{source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
-                            
-                            # Write each match
-                            for j in range(match_count):
-                                child = parent.child(j)
-                                filename = child.text(0)
-                                child_artist = child.text(1)
-                                child_title = child.text(2)
-                                format_type = child.text(3)
-                                duration = child.text(4)
-                                bitrate = child.text(5)
-                                score = child.text(6)
-                                file_path = child.data(0, Qt.UserRole + 1)
-                                
-                                # Escape CSV fields
-                                filename = f'"{filename.replace("\"", "\"\"")}"'
-                                child_artist = f'"{child_artist.replace("\"", "\"\"")}"'
-                                child_title = f'"{child_title.replace("\"", "\"\"")}"'
-                                file_path = f'"{file_path.replace("\"", "\"\"")}"'
-                                
-                                # Write match row (with leading commas to align under parent)
-                                file.write(f'"","",,,"",{filename},{format_type},{duration},{bitrate},{score},{file_path}\n')
-                else:
-                    # Export flat results
-                    file.write("Filename,Artist,Title,Format,Duration,Bitrate,Match Score,File Path\n")
-                    
-                    for i in range(self.results_tree.topLevelItemCount()):
-                        item = self.results_tree.topLevelItem(i)
-                        filename = item.text(0)
-                        artist = item.text(1)
-                        title = item.text(2)
-                        format_type = item.text(3)
-                        duration = item.text(4)
-                        bitrate = item.text(5)
-                        score = item.text(6)
-                        file_path = item.data(0, Qt.UserRole + 1)
-                        
-                        # Escape CSV fields
-                        filename = f'"{filename.replace("\"", "\"\"")}"'
-                        artist = f'"{artist.replace("\"", "\"\"")}"'
-                        title = f'"{title.replace("\"", "\"\"")}"'
-                        file_path = f'"{file_path.replace("\"", "\"\"")}"'
-                        
-                        file.write(f"{filename},{artist},{title},{format_type},{duration},{bitrate},{score},{file_path}\n")
-            
-            QMessageBox.information(
-                self,
-                "Export Complete",
-                f"Results exported to:\n{file_path}"
-            )
-        
-        except Exception as e:
-            logger.error(f"Error exporting results: {str(e)}")
-            QMessageBox.warning(
-                self,
-                "Export Failed",
-                f"Failed to export results: {str(e)}"
-            )
-    
-    def clear_results(self):
-        """Clear search results."""
-        self.current_results = []
-        self.grouped_results = {}
-        self.results_tree.clear()
-        self.status_label.setText("No results to display")
-        self.update_button_states()
-    
-    def load_settings(self):
-        """Load panel settings."""
-        settings = QSettings("MusicIndexer", "MusicIndexer")
-        
-        # Load column widths
-        for i in range(7):  # 7 columns
-            width = settings.value(f"results/column_width_{i}", 0, type=int)
-            if width > 0:
-                self.results_tree.setColumnWidth(i, width)
-    
-    def save_settings(self):
-        """Save panel settings."""
-        settings = QSettings("MusicIndexer", "MusicIndexer")
-        
-        # Save column widths
-        for i in range(7):  # 7 columns
-            settings.setValue(f"results/column_width_{i}", self.results_tree.columnWidth(i))
-        
-        # Save expanded state is handled in on_item_expanded/on_item_collapsed
-    
-    def closeEvent(self, event):
-        """Handle panel close event."""
-        self.save_settings()
-        super().closeEvent(event)
-
     def play_audio_file(self, file_path):
         """Play an audio file using the system's default audio player."""
         if not os.path.exists(file_path):
@@ -844,17 +864,137 @@ class ResultsPanel(QWidget):
                     subprocess.run(['open', file_path])
                 else:  # Linux
                     subprocess.run(['xdg-open', file_path])
-            
         except Exception as e:
             logger.error(f"Error playing audio file: {str(e)}")
-            QMessageBox.warning(
-                self,
-                "Error",
-                f"Could not play file: {str(e)}\nFile path: {file_path}"
-            )
+            QMessageBox.warning(self, "Error", f"Could not play file: {str(e)}")
+    
     def on_item_double_clicked(self, item, column):
         """Handle double-click on an item."""
-        # Check if this is a file item (not a group header)
         file_path = item.data(0, Qt.UserRole + 1)
         if file_path:
             self.play_audio_file(file_path)
+    
+    def export_results(self):
+        """Export search results to a file."""
+        if self.results_tree.topLevelItemCount() == 0:
+            return
+        
+        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        if not default_dir or not os.path.exists(default_dir):
+            default_dir = os.path.expanduser("~")
+        
+        default_path = os.path.join(default_dir, "music_search_results.csv")
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            default_path,
+            "CSV Files (*.csv);;Text Files (*.txt);;All Files (*.*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, 'w', encoding='utf-8') as file:
+                if self.is_auto_search:
+                    # Export grouped results with selection status
+                    file.write("Status,Selected,Source Line,Artist,Title,Match Count,Filename,Format,Duration,Bitrate,Match Score,File Path\n")
+                    
+                    for i in range(self.results_tree.topLevelItemCount()):
+                        parent = self.results_tree.topLevelItem(i)
+                        source_line = parent.text(1)
+                        artist = parent.text(2)
+                        title = parent.text(3)
+                        match_count = parent.childCount()
+                        
+                        if match_count == 0:
+                            status = "Missing"
+                            file.write(f'"{status}","No","Line {source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
+                        else:
+                            if match_count == 1:
+                                status = "Found"
+                            else:
+                                status = "Multiple"
+                            
+                            file.write(f'"{status}","Header","Line {source_line}","{artist}","{title}",{match_count},"","","","","",""\n')
+                            
+                            for j in range(match_count):
+                                child = parent.child(j)
+                                filename = child.text(1)
+                                child_artist = child.text(2)
+                                child_title = child.text(3)
+                                format_type = child.text(4)
+                                duration = child.text(5)
+                                bitrate = child.text(6)
+                                score = child.text(7)
+                                file_path_item = child.data(0, Qt.UserRole + 1)
+                                
+                                selected = "Yes" if file_path_item in self.auto_selected_files else "No"
+                                
+                                file.write(f'"","Selected: {selected}","","{child_artist}","{child_title}","","{filename}","{format_type}","{duration}","{bitrate}","{score}","{file_path_item}"\n')
+                else:
+                    # Export flat results
+                    file.write("Selected,Filename,Artist,Title,Format,Duration,Bitrate,Match Score,File Path\n")
+                    
+                    for i in range(self.results_tree.topLevelItemCount()):
+                        item = self.results_tree.topLevelItem(i)
+                        filename = item.text(1)
+                        artist = item.text(2)
+                        title = item.text(3)
+                        format_type = item.text(4)
+                        duration = item.text(5)
+                        bitrate = item.text(6)
+                        score = item.text(7)
+                        file_path_item = item.data(0, Qt.UserRole + 1)
+                        
+                        selected = "Yes" if file_path_item in self.auto_selected_files else "No"
+                        
+                        file.write(f'"{selected}","{filename}","{artist}","{title}","{format_type}","{duration}","{bitrate}","{score}","{file_path_item}"\n')
+            
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Results exported to:\n{file_path}"
+            )
+        
+        except Exception as e:
+            logger.error(f"Error exporting results: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Export Failed",
+                f"Failed to export results: {str(e)}"
+            )
+    
+    def clear_results(self):
+        """Clear search results."""
+        self.current_results = []
+        self.grouped_results = {}
+        self.auto_selected_files.clear()
+        self.results_tree.clear()
+        self.status_label.setText("No results to display")
+        self.update_selection_summary()
+        self.update_button_states()
+    
+    def load_settings(self):
+        """Load panel settings."""
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        
+        # Load column widths
+        for i in range(8):  # 8 columns now
+            width = settings.value(f"results/column_width_{i}", 0, type=int)
+            if width > 0:
+                self.results_tree.setColumnWidth(i, width)
+    
+    def save_settings(self):
+        """Save panel settings."""
+        settings = QSettings("MusicIndexer", "MusicIndexer")
+        
+        # Save column widths
+        for i in range(8):  # 8 columns now
+            settings.setValue(f"results/column_width_{i}", self.results_tree.columnWidth(i))
+    
+    def closeEvent(self, event):
+        """Handle panel close event."""
+        self.save_settings()
+        super().closeEvent(event)

@@ -12,6 +12,7 @@ from .search.auto_search import AutoSearch
 from .search.string_matcher import StringMatcher
 from .utils.config_manager import ConfigManager
 from .utils.logger import get_logger
+from .utils.smart_auto_selector import SmartAutoSelector
 
 logger = get_logger()
 
@@ -31,6 +32,7 @@ class MusicIndexer:
         self.string_matcher = StringMatcher(self.config_manager.get_similarity_threshold())
         self.manual_search = ManualSearch(self.cache_manager, self.string_matcher)
         self.auto_search = AutoSearch(self.cache_manager, self.string_matcher)
+        self.smart_auto_selector = SmartAutoSelector()
         
         # Initialize state
         self.indexing_in_progress = False
@@ -261,6 +263,10 @@ class MusicIndexer:
             bool: True if results were saved successfully, False otherwise
         """
         return self.auto_search.save_results(results, output_file)
+
+    def update_auto_selection_preferences(self, **kwargs):
+        """Update auto-selection preferences."""
+        self.smart_auto_selector.update_preferences(**kwargs)
     
     def copy_files_to_directory(self, file_paths, target_directory, callback=None):
         """

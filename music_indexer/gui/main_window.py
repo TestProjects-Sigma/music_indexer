@@ -19,7 +19,7 @@ from .. import MusicIndexer
 
 # Import GUI panels
 from .search_panel import SearchPanel
-from .results_panel import ResultsPanel
+from .results_panel import EnhancedResultsPanel
 from .settings_panel import SettingsPanel
 
 from .spotify_panel import SpotifyPanel
@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         
         # Create tabs
         self.search_panel = SearchPanel(self.music_indexer)
-        self.results_panel = ResultsPanel(self.music_indexer)
+        self.results_panel = EnhancedResultsPanel(self.music_indexer)
         self.settings_panel = SettingsPanel(self.music_indexer)
         self.spotify_panel = SpotifyPanel(self.music_indexer)
         
