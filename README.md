@@ -1,6 +1,6 @@
 # Music Indexer
 
-A Python application for indexing and searching large music collections, with support for various audio formats and intelligent auto-selection of best matches.
+A Python application for indexing and searching large music collections, with support for various audio formats, intelligent auto-selection of best matches, and comprehensive backup & restore capabilities.
 
 ## Features
 
@@ -13,15 +13,72 @@ A Python application for indexing and searching large music collections, with su
   - **Automatic Search**: Match music from a text file containing artist/title pairs.
 - **Smart Auto-Selection**: 🆕 Automatically select the best match for each entry based on your preferences.
 - **Bulk Operations**: 🆕 Copy hundreds of files with a single click after auto-selection.
+- **Database Backup & Restore**: 🆕 Comprehensive backup system to protect your indexed music collection.
 - **Fuzzy Matching**: Adjustable similarity threshold for flexible matching of file names and metadata.
 - **Result Management**: Sort, filter, and export search results to CSV.
 - **File Operations**: Copy matched files to a selected directory.
 - **Cache System**: Fast indexing with SQLite-based caching of file metadata.
 
-## 🚀 New Auto-Selection Features
+## 🛡️ Database Backup & Restore System
 
-### Smart Bulk Operations
-Never manually select hundreds of tracks again! The enhanced auto-selection system can:
+### Never Lose Your Indexed Music Collection Again!
+The comprehensive backup system protects weeks or months of indexing work with enterprise-level features in a user-friendly interface.
+
+#### **🎯 Key Backup Features**
+- **Multiple Archive Formats**: ZIP, TAR, TAR.GZ, and 7Z support
+- **Complete Data Protection**: Backs up both your music database AND configuration settings
+- **Smart Backup**: Includes your directories, preferences, auto-selection settings, and theme choices
+- **Auto-naming**: Timestamp-based filenames prevent overwrites
+- **Verification**: Integrity checking before restore operations
+- **Metadata Tracking**: Backup files include creation info and original database statistics
+
+#### **🔄 Restore Capabilities**
+- **Safety First**: Automatically backs up existing files before restore
+- **Selective Restore**: Choose whether to restore configuration along with database
+- **Content Preview**: View backup contents and verify integrity before restore
+- **Cross-Platform**: Move your entire music index between Windows, Mac, and Linux
+
+#### **💾 What Gets Backed Up**
+- **Music Database**: Your entire indexed music collection (thousands of files indexed in minutes on restore)
+- **Configuration**: All your settings, music directories, and preferences
+- **Auto-Selection Preferences**: Format priorities, quality settings, and match thresholds
+- **Theme Settings**: Your chosen appearance and interface preferences
+- **Directory Configurations**: No need to re-add music folders
+
+#### **🚀 Backup Workflow Examples**
+
+##### **Weekly Protection Routine**
+```
+1. Backup Tab → Quick Backup
+2. Automatic timestamped backup created
+3. Peace of mind - your indexed collection is safe
+```
+
+##### **Computer Migration**
+```
+Old Computer:
+1. Backup Tab → Create Backup → Include configuration ✓
+2. Save to USB drive or cloud storage
+
+New Computer:  
+1. Install Music Indexer
+2. Backup Tab → Restore Backup
+3. Select your backup file → Restore
+4. Instantly have your entire collection indexed with all preferences!
+```
+
+##### **Before Major Changes**
+```
+Before upgrading or experimenting:
+1. Create backup with current settings
+2. Make changes safely
+3. If something goes wrong: restore backup → back to working state
+```
+
+## 🚀 Smart Auto-Selection Features
+
+### Enhanced Bulk Operations
+Never manually select hundreds of tracks again! The intelligent auto-selection system can:
 - **Automatically select** the best match for each playlist entry
 - **Bulk copy** all selected files in one operation
 - **Intelligent decision making** based on format preferences and quality
@@ -76,6 +133,7 @@ Enhanced indexing options for improved performance:
 - **Smart Caching**: Files indexed with basic info can be updated later with full metadata
 - **Progress Indicators**: Clear indication of which extraction mode is being used
 - **Bulk Operations**: 🆕 Non-blocking file operations with progress tracking
+- **Incremental Updates**: 🆕 Subsequent indexing runs only process new/changed files
 
 ## Theme Support
 The application supports multiple visual themes:
@@ -83,7 +141,7 @@ The application supports multiple visual themes:
 - **Dark Theme**: A modern dark interface for comfortable use in low-light environments
 - **Light Theme**: A clean, bright interface for high-visibility usage
 - **System Default**: Uses your operating system's native look and feel
-- **Persistent Settings**: Your theme preference is saved between sessions
+- **Persistent Settings**: Your theme preference is saved between sessions and included in backups
 
 ## Enhanced Search Results
 The automatic search feature provides comprehensive visibility:
@@ -134,12 +192,40 @@ python main.py
 1. Go to the "Settings" tab and add your music directories.
 2. Click "Index Files" to scan and index your music collection.
    - Use the "Extract Audio Metadata" checkbox to toggle between fast and complete indexing
-3. **Configure Auto-Selection Preferences** (🆕):
+3. **Create Your First Backup** 🆕:
+   - Go to the "Backup" tab
+   - Click "Quick Backup" or customize backup settings
+   - Your indexed collection is now protected!
+4. **Configure Auto-Selection Preferences** 🆕:
    - Set your preferred format order (drag and drop to reorder)
    - Choose minimum match score threshold
    - Enable/disable higher bitrate preference
    - Adjust score tolerance for quality vs accuracy trade-offs
-4. Choose your preferred theme in the Appearance section.
+5. Choose your preferred theme in the Appearance section.
+
+### Database Backup & Restore 🆕
+
+#### Creating Backups
+1. **Navigate to Backup Tab**: Click the "Backup" tab in the main interface
+2. **Review Database Info**: See your current indexed files count and database size
+3. **Choose Format**: Select ZIP (recommended), TAR.GZ, TAR, or 7Z
+4. **Select Options**: 
+   - ✅ Include configuration (recommended) - preserves all your settings
+   - Choose backup location or use auto-generated filename
+5. **Create Backup**: Click "Create Backup" or "Quick Backup" for default settings
+
+#### Restoring Backups
+1. **Select Backup File**: Browse to your backup archive
+2. **Choose Options**:
+   - Restore configuration (includes all your preferences and settings)
+   - Backup existing files (safety measure - recommended)
+3. **Verify First** (Optional): Click "Verify Backup Integrity" to check the backup
+4. **Restore**: Click "Restore Backup" - your entire indexed collection will be restored
+
+#### Quick Actions
+- **Quick Backup**: One-click backup with optimal settings
+- **Open Backup Folder**: Direct access to your backup directory
+- **Auto-Generate Filename**: Timestamp-based naming to prevent overwrites
 
 ### Searching Music
 
@@ -177,6 +263,33 @@ python main.py
 - **Format Preferences**: System respects your preferred audio formats
 - **Bitrate Optimization**: Automatically prefer higher quality files when scores are similar
 - **Score Thresholds**: Only auto-select files that meet your minimum quality standards
+
+### Data Protection Best Practices 🛡️
+
+#### Regular Backup Schedule
+```
+Weekly: Quick Backup to local storage
+Monthly: Full backup to cloud storage or external drive
+Before major changes: Create backup with descriptive name
+```
+
+#### Migration Strategy
+```
+Moving computers: 
+1. Create backup with configuration
+2. Install Music Indexer on new system
+3. Restore backup
+4. Verify all settings and directories
+```
+
+#### Recovery Planning
+```
+System crash recovery:
+1. Reinstall Music Indexer
+2. Restore from most recent backup
+3. Verify database integrity
+4. Resume normal operations
+```
 
 ### Auto-Selection Configuration Examples
 
@@ -239,12 +352,14 @@ music_indexer/
 │   │   ├── main_window.py       # Main application window
 │   │   ├── search_panel.py      # Search interface
 │   │   ├── results_panel.py     # Enhanced results display and management
-│   │   ├── settings_panel.py    # Enhanced application settings interface
-│   │   └── spotify_panel.py     # Spotify integration
+│   │   ├── settings_panel.py    # Application settings interface
+│   │   ├── spotify_panel.py     # Spotify integration
+│   │   └── backup_panel.py      # 🆕 Database backup and restore interface
 │   └── utils/                   # Utility modules
 │       ├── config_manager.py    # Configuration management
 │       ├── logger.py            # Logging functionality
-│       └── smart_auto_selector.py # 🆕 Smart auto-selection algorithm
+│       ├── smart_auto_selector.py # Smart auto-selection algorithm
+│       └── backup_manager.py    # 🆕 Backup and restore operations
 └── tests/                       # Unit tests
     ├── test_file_scanner.py     # Tests for file scanner
     ├── test_metadata_extractor.py # Tests for metadata extraction
@@ -261,6 +376,8 @@ music_indexer/
 - **Auto-Selection Not Working**: 🆕 Check that auto-selection is enabled in Settings and that your minimum score threshold isn't too high.
 - **Poor Auto-Selection Results**: 🆕 Adjust format preferences and score tolerance in Settings to better match your collection and preferences.
 - **Bulk Copy Failures**: 🆕 Ensure destination folder exists and you have write permissions. Check logs for specific error details.
+- **Backup Creation Fails**: 🆕 Ensure you have write permissions to the backup destination and sufficient disk space.
+- **Restore Operation Fails**: 🆕 Verify backup integrity first, ensure the application has write permissions to database location.
 - **Theme Not Applying**: If the theme doesn't change immediately, try saving settings and restarting the application.
 
 ### Performance Tips
@@ -268,6 +385,15 @@ music_indexer/
 - **Large Collections**: Use fast indexing mode for initial setup, then re-index with full metadata when needed
 - **Large Playlists**: Auto-selection handles hundreds of entries efficiently, but very large playlists (1000+ entries) may take a few seconds
 - **Network Storage**: Local storage performs better than network-attached storage for bulk operations
+- **Regular Backups**: 🆕 Create backups regularly - they're much faster than re-indexing large collections
+- **Incremental Indexing**: 🆕 Subsequent indexing runs are much faster as they only process new/changed files
+
+### Data Protection
+
+- **Backup Before Major Changes**: Always create a backup before upgrading, changing settings, or moving files
+- **Verify Backups**: Use the "Verify Backup Integrity" feature to ensure your backups are valid
+- **Multiple Backup Locations**: Store backups in different locations (local, cloud, external drive) for maximum protection
+- **Test Restores**: Periodically test restore operations to ensure your backup strategy works
 
 ### Logs
 
@@ -275,6 +401,7 @@ Logs are stored in the `logs` directory and include detailed information about:
 - Auto-selection decisions and reasoning
 - File copy operations and any failures
 - Match quality statistics and performance metrics
+- Backup and restore operations with detailed success/failure information
 
 ## License
 
@@ -290,6 +417,15 @@ This project is open source and available under the MIT License.
 
 ## Recent Updates
 
+### Version 0.3.0 - Database Backup & Restore System
+- 🆕 **Comprehensive Backup System**: Full database and configuration backup with multiple archive formats
+- 🆕 **Smart Restore Operations**: Safe restore with automatic backup of existing files
+- 🆕 **Backup Verification**: Integrity checking and content preview for backup files
+- 🆕 **Cross-Platform Migration**: Easy transfer of indexed collections between computers
+- 🆕 **Data Protection**: Never lose weeks of indexing work again
+- 🆕 **Quick Backup Actions**: One-click backup creation with optimal settings
+- 🆕 **Incremental Indexing**: Much faster subsequent indexing runs (only processes new/changed files)
+
 ### Version 0.2.0 - Enhanced Auto-Selection
 - 🆕 **Smart Auto-Selection**: Automatically select best matches based on configurable preferences
 - 🆕 **Bulk Operations**: Copy hundreds of files with single-click operations
@@ -301,4 +437,15 @@ This project is open source and available under the MIT License.
 - ✨ **Performance**: Non-blocking file operations with progress tracking
 - ✨ **Usability**: Streamlined workflow for large playlist processing
 
-Perfect for users with large music collections who need to efficiently match and copy files from playlists with hundreds of tracks!
+Perfect for users with large music collections who need to efficiently match and copy files from playlists with hundreds of tracks, while ensuring their indexed database is always protected and portable! 🎵🛡️
+
+## 🎯 Why Choose Music Indexer?
+
+- **🚀 Speed**: Index once, search instantly - subsequent indexing runs are lightning fast
+- **🧠 Intelligence**: Smart auto-selection saves hours of manual work
+- **🛡️ Protection**: Enterprise-level backup system protects your work
+- **🔄 Portability**: Move your entire indexed collection between computers effortlessly
+- **🎵 Scale**: Handle collections of 10,000+ files with ease
+- **⚙️ Flexibility**: Customize every aspect of matching and selection behavior
+
+Transform your music collection management from tedious manual work to automated efficiency!
