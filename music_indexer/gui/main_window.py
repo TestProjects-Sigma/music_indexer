@@ -23,6 +23,7 @@ from .results_panel import EnhancedResultsPanel
 from .settings_panel import SettingsPanel
 
 from .spotify_panel import SpotifyPanel
+from .backup_panel import BackupPanel
 
 class MainWindow(QMainWindow):
     """Main window for the Music Indexer application."""
@@ -103,6 +104,7 @@ class MainWindow(QMainWindow):
         self.results_panel = EnhancedResultsPanel(self.music_indexer)
         self.settings_panel = SettingsPanel(self.music_indexer)
         self.spotify_panel = SpotifyPanel(self.music_indexer)
+        self.backup_panel = BackupPanel(self.music_indexer)
         
         # Connect panels
         self.search_panel.search_completed.connect(self.results_panel.set_results)
@@ -112,6 +114,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.results_panel, "Results")
         self.tab_widget.addTab(self.settings_panel, "Settings")
         self.tab_widget.addTab(self.spotify_panel, "Spotify")
+        self.tab_widget.addTab(self.backup_panel, "Backup")
         
         # Create button layout
         button_layout = QHBoxLayout()
