@@ -125,6 +125,13 @@ class EnhancedResultsPanel(QWidget):
         self.export_button.setEnabled(False)
         button_layout.addWidget(self.export_button)
         
+        # Add "Export Missing Tracks" button
+        self.export_missing_button = QPushButton("Export Missing Tracks")
+        self.export_missing_button.clicked.connect(self.export_missing_tracks)
+        self.export_missing_button.setEnabled(False)
+        self.export_missing_button.setToolTip("Export tracks with no matches to a text file for follow-up searching")
+        button_layout.addWidget(self.export_missing_button)
+        
         # Add "Clear Results" button
         self.clear_button = QPushButton("Clear Results")
         self.clear_button.clicked.connect(self.clear_results)
@@ -686,6 +693,7 @@ class EnhancedResultsPanel(QWidget):
         self.copy_selected_button.setEnabled(has_selections)
         self.show_folder_button.setEnabled(has_selections)
         self.export_button.setEnabled(has_results)
+        self.export_missing_button.setEnabled(has_grouped_results and self.has_missing_tracks())
         self.clear_button.setEnabled(has_results)
     
     def get_selected_file_paths(self):
@@ -755,6 +763,11 @@ class EnhancedResultsPanel(QWidget):
         context_menu.addSeparator()
         export_action = context_menu.addAction("Export Results")
         export_action.triggered.connect(self.export_results)
+        
+        # Add missing tracks export for grouped results
+        if self.is_auto_search and self.has_missing_tracks():
+            export_missing_action = context_menu.addAction("Export Missing Tracks")
+            export_missing_action.triggered.connect(self.export_missing_tracks)
         
         clear_action = context_menu.addAction("Clear Results")
         clear_action.triggered.connect(self.clear_results)
@@ -873,6 +886,133 @@ class EnhancedResultsPanel(QWidget):
         file_path = item.data(0, Qt.UserRole + 1)
         if file_path:
             self.play_audio_file(file_path)
+    
+    def has_missing_tracks(self):
+        """Check if there are any missing tracks in the grouped results."""
+        if not self.grouped_results:
+            return False
+        
+        for group_data in self.grouped_results.values():
+            matches = group_data.get('matches', [])
+            if len(matches) == 0:  # No matches = missing track
+                return True
+        
+        return False
+    
+    def export_missing_tracks(self):
+        """Export tracks with no matches to a text file."""
+        if not self.grouped_results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No grouped results available. Please run an automatic search first."
+            )
+            return
+        
+        # Collect missing tracks
+        missing_tracks = []
+        for group_data in self.grouped_results.values():
+            matches = group_data.get('matches', [])
+            if len(matches) == 0:  # No matches found
+                line = group_data.get('line', '')
+                artist = group_data.get('artist', '')
+                title = group_data.get('title', '')
+                
+                # Use original line if available, otherwise reconstruct from artist/title
+                if line.strip():
+                    missing_tracks.append(line.strip())
+                elif artist and title:
+                    missing_tracks.append(f"{artist} - {title}")
+                elif title:  # Only title available
+                    missing_tracks.append(title)
+        
+        if not missing_tracks:
+            QMessageBox.information(
+                self,
+                "No Missing Tracks",
+                "Great news! All tracks from your playlist were found in your music collection."
+            )
+            return
+        
+        # Get default export directory
+        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        if not default_dir or not os.path.exists(default_dir):
+            default_dir = os.path.expanduser("~")
+        
+        # Generate default filename
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"missing_tracks_{timestamp}.txt"
+        default_path = os.path.join(default_dir, default_filename)
+        
+        # Get file path from user
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Missing Tracks",
+            default_path,
+            "Text Files (*.txt);;CSV Files (*.csv);;All Files (*.*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # Determine format based on file extension
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
+            with open(file_path, 'w', encoding='utf-8') as file:
+                if file_ext == '.csv':
+                    # CSV format with headers
+                    file.write("Original Line,Artist,Title,Status\n")
+                    for group_data in self.grouped_results.values():
+                        matches = group_data.get('matches', [])
+                        if len(matches) == 0:
+                            line = group_data.get('line', '')
+                            artist = group_data.get('artist', '')
+                            title = group_data.get('title', '')
+                            
+                            # Escape CSV fields
+                            line_escaped = f'"{line.replace("\"", "\"\"")}"'
+                            artist_escaped = f'"{artist.replace("\"", "\"\"")}"'
+                            title_escaped = f'"{title.replace("\"", "\"\"")}"'
+                            
+                            file.write(f"{line_escaped},{artist_escaped},{title_escaped},Missing\n")
+                else:
+                    # Simple text format - ready for re-processing
+                    file.write("# Missing Tracks - Not found in your music collection\n")
+                    file.write("# You can use this file for automatic search after adding more music\n")
+                    file.write("# Format: Artist - Title (one per line)\n\n")
+                    
+                    for track in missing_tracks:
+                        file.write(f"{track}\n")
+            
+            # Show success message with statistics
+            total_entries = len(self.grouped_results)
+            missing_count = len(missing_tracks)
+            found_count = total_entries - missing_count
+            
+            QMessageBox.information(
+                self,
+                "Missing Tracks Exported",
+                f"✅ Missing tracks exported successfully!\n\n"
+                f"📊 Statistics:\n"
+                f"• Total playlist entries: {total_entries}\n"
+                f"• Found in collection: {found_count}\n"
+                f"• Missing tracks: {missing_count}\n"
+                f"• Success rate: {(found_count/total_entries*100):.1f}%\n\n"
+                f"📁 File saved: {file_path}\n\n"
+                f"💡 You can use this file for automatic search after adding more music to your collection!"
+            )
+            
+            logger.info(f"Exported {missing_count} missing tracks to {file_path}")
+        
+        except Exception as e:
+            logger.error(f"Error exporting missing tracks: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Export Failed",
+                f"Failed to export missing tracks:\n{str(e)}"
+            )
     
     def export_results(self):
         """Export search results to a file."""

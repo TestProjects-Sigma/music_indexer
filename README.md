@@ -13,6 +13,7 @@ A Python application for indexing and searching large music collections, with su
   - **Automatic Search**: Match music from a text file containing artist/title pairs.
 - **Smart Auto-Selection**: 🆕 Automatically select the best match for each entry based on your preferences.
 - **Bulk Operations**: 🆕 Copy hundreds of files with a single click after auto-selection.
+- **Export Missing Tracks**: 🆕 Export unmatched tracks to text files for systematic follow-up searching.
 - **Database Backup & Restore**: 🆕 Comprehensive backup system to protect your indexed music collection.
 - **Fuzzy Matching**: Adjustable similarity threshold for flexible matching of file names and metadata.
 - **Result Management**: Sort, filter, and export search results to CSV.
@@ -96,6 +97,7 @@ Customize how the system chooses matches:
 - **Bulk selection controls** (select all, deselect all, auto-select best)
 - **Enhanced context menus** with group operations
 - **Export results** with selection status
+- **Export missing tracks** 🆕 for systematic follow-up searching
 
 ## Grouped Results View
 The Results panel includes a hierarchical grouped view for automatic searches from text files:
@@ -116,6 +118,7 @@ The results panel includes a fully-featured right-click context menu:
 - **Show in Folder**: Open the file's location in your system's file explorer
 - **Play Audio**: Play the selected audio file with your system's default audio player
 - **Export Results**: Export all results to a CSV file with selection status
+- **Export Missing Tracks**: 🆕 Export unmatched tracks for follow-up searching
 - **Group Operations**: Select best in group, select/deselect all in group
 
 ## Audio Playback
@@ -144,12 +147,14 @@ The application supports multiple visual themes:
 - **Persistent Settings**: Your theme preference is saved between sessions and included in backups
 
 ## Enhanced Search Results
-The automatic search feature provides comprehensive visibility:
+The automatic search feature provides comprehensive visibility and follow-up capabilities:
 
 - **Missing Track Detection**: Clearly see which entries from your text file have no matching files
+- **Export Missing Tracks**: 🆕 Export unmatched tracks to text files for systematic hunting and re-processing
 - **Match Statistics**: View counts of found, missing, and multiple matches in the status bar
 - **Selection Analytics**: 🆕 Track auto-selection success rates and quality metrics
 - **Enhanced CSV Export**: Export results with hierarchical information including match status and selection state
+- **Workflow Completion**: 🆕 Complete cycle from search → export missing → add music → re-search → improve success rate
 
 ## Spotify Integration
 The Music Indexer includes a dedicated Spotify tab for extracting playlists:
@@ -246,6 +251,7 @@ python main.py
 5. **Click "Auto-Select Best Matches"** to automatically choose the best file for each entry.
 6. **Review and adjust selections** using checkboxes if needed.
 7. **Click "Copy Selected Files"** to bulk copy all selected files.
+8. **Export Missing Tracks** 🆕 to get a text file of unmatched entries for follow-up.
 
 ### Enhanced Working with Results
 
@@ -256,6 +262,7 @@ python main.py
 
 #### File Operations
 - **Bulk Copy**: Copy all selected files to a destination folder in one operation
+- **Export Missing**: 🆕 Export unmatched tracks to text files for systematic follow-up
 - **Individual Actions**: Show in folder, play audio, or manually select/deselect
 - **Progress Tracking**: Non-blocking copy operations with real-time progress
 
@@ -263,6 +270,27 @@ python main.py
 - **Format Preferences**: System respects your preferred audio formats
 - **Bitrate Optimization**: Automatically prefer higher quality files when scores are similar
 - **Score Thresholds**: Only auto-select files that meet your minimum quality standards
+
+### Missing Track Follow-up Workflow 🆕
+
+#### Systematic Missing Track Resolution
+```
+1. Run automatic search on playlist
+2. Auto-select best matches for found tracks
+3. Copy matched files to destination
+4. Export Missing Tracks to text file
+5. Hunt down missing music (buy, download, find)
+6. Add new music to collection and re-index
+7. Use exported missing tracks file for new automatic search
+8. Repeat until 100% playlist completion!
+```
+
+#### Export Missing Tracks Features
+- **Smart Detection**: Automatically identifies tracks with no matches
+- **Reusable Format**: Exported file works directly with automatic search
+- **Multiple Formats**: TXT (default) or CSV with detailed information
+- **Statistics Tracking**: See your success rate improve over time
+- **Workflow Integration**: Seamlessly fits into the search → match → export → follow-up cycle
 
 ### Data Protection Best Practices 🛡️
 
@@ -376,6 +404,7 @@ music_indexer/
 - **Auto-Selection Not Working**: 🆕 Check that auto-selection is enabled in Settings and that your minimum score threshold isn't too high.
 - **Poor Auto-Selection Results**: 🆕 Adjust format preferences and score tolerance in Settings to better match your collection and preferences.
 - **Bulk Copy Failures**: 🆕 Ensure destination folder exists and you have write permissions. Check logs for specific error details.
+- **Missing Tracks Export Empty**: 🆕 This means all tracks were found! Check that you ran an automatic search (not manual search) to get missing track export option.
 - **Backup Creation Fails**: 🆕 Ensure you have write permissions to the backup destination and sufficient disk space.
 - **Restore Operation Fails**: 🆕 Verify backup integrity first, ensure the application has write permissions to database location.
 - **Theme Not Applying**: If the theme doesn't change immediately, try saving settings and restarting the application.
@@ -387,6 +416,8 @@ music_indexer/
 - **Network Storage**: Local storage performs better than network-attached storage for bulk operations
 - **Regular Backups**: 🆕 Create backups regularly - they're much faster than re-indexing large collections
 - **Incremental Indexing**: 🆕 Subsequent indexing runs are much faster as they only process new/changed files
+- **Missing Track Workflow**: 🆕 Use export missing tracks feature to systematically improve playlist completion rates
+- **Batch Processing**: 🆕 Process multiple playlists, export missing tracks from each, then hunt for all missing music at once
 
 ### Data Protection
 
@@ -417,7 +448,11 @@ This project is open source and available under the MIT License.
 
 ## Recent Updates
 
-### Version 0.3.0 - Database Backup & Restore System
+### Version 0.3.0 - Database Backup & Restore System + Missing Track Export
+- 🆕 **Export Missing Tracks**: Export unmatched playlist entries to text files for systematic follow-up
+- 🆕 **Complete Workflow**: Search → match → copy → export missing → hunt → repeat until 100% completion
+- 🆕 **Reusable Format**: Exported missing tracks files work directly with automatic search
+- 🆕 **Success Rate Tracking**: See statistics and improve playlist completion over time
 - 🆕 **Comprehensive Backup System**: Full database and configuration backup with multiple archive formats
 - 🆕 **Smart Restore Operations**: Safe restore with automatic backup of existing files
 - 🆕 **Backup Verification**: Integrity checking and content preview for backup files
@@ -447,5 +482,7 @@ Perfect for users with large music collections who need to efficiently match and
 - **🔄 Portability**: Move your entire indexed collection between computers effortlessly
 - **🎵 Scale**: Handle collections of 10,000+ files with ease
 - **⚙️ Flexibility**: Customize every aspect of matching and selection behavior
+- **📋 Completeness**: 🆕 Export missing tracks for systematic playlist completion
+- **🔁 Workflow**: 🆕 Complete cycle from search to 100% playlist matching
 
-Transform your music collection management from tedious manual work to automated efficiency!
+Transform your music collection management from tedious manual work to automated efficiency with systematic missing track resolution!
