@@ -92,17 +92,38 @@ class AutoSearch:
     
     def _find_matches_for_pair(self, artist, title, all_files):
         """
-        Find matches for an artist/title pair in file list.
+        Find matches for an artist/title pair using pre-filtering for better performance.
         
         Args:
             artist (str): Artist to match
             title (str): Title to match
-            all_files (list): List of file metadata dictionaries
+            all_files (list): List of file metadata dictionaries (not used with pre-filtering)
         
         Returns:
             list: List of matches sorted by score
         """
-        return self.string_matcher.find_matches(artist, title, all_files)
+        # Extract key words for pre-filtering
+        artist_words = self.string_matcher.extract_key_words(artist) if artist else []
+        title_words = self.string_matcher.extract_key_words(title) if title else []
+        
+        # If we have key words, use pre-filtering
+        if artist_words or title_words:
+            candidate_files = self.cache_manager.get_candidate_files(
+                artist_words=artist_words,
+                title_words=title_words,
+                limit=1000  # Limit candidates for performance
+            )
+            
+            logger.debug(f"Pre-filtering: {len(candidate_files)} candidates for '{artist} - {title}'")
+            
+            # Use the candidates for fuzzy matching
+            matches = self.string_matcher.find_matches(artist, title, candidate_files)
+        else:
+            # Fallback to original method if no key words
+            logger.debug(f"No key words found, using full search for '{artist} - {title}'")
+            matches = self.string_matcher.find_matches(artist, title, all_files)
+        
+        return matches
     
     def process_match_file(self, file_path, show_progress=True):
         """
@@ -122,12 +143,10 @@ class AutoSearch:
             logger.warning(f"No valid entries found in match file: {file_path}")
             return []
         
-        # Get all files from cache
-        all_files = self.cache_manager.get_all_files()
-        
-        if not all_files:
-            logger.warning("No files in cache to match against")
-            return []
+        # We don't need to load all files anymore since we use pre-filtering
+        # But we'll keep this for logging purposes
+        cache_stats = self.cache_manager.get_cache_stats()
+        logger.info(f"Processing {len(pairs)} entries against {cache_stats['total_files']} indexed files")
         
         # Process each pair
         results = []
@@ -136,11 +155,10 @@ class AutoSearch:
             progress_bar = tqdm(total=len(pairs), desc="Processing matches", unit="entry")
         
         for line_num, line, artist, title in pairs:
-            # Find matches
-            matches = self._find_matches_for_pair(artist, title, all_files)
+            # Find matches using pre-filtering (pass empty list since we don't use it)
+            matches = self._find_matches_for_pair(artist, title, [])
             
             # Create result dictionary for each line
-            # This format is specifically designed for the grouped results view
             results.append({
                 'line_num': line_num,
                 'line': line,

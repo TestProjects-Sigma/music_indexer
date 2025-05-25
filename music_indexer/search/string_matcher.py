@@ -63,7 +63,36 @@ class StringMatcher:
         text = text.strip()
         
         return text
-    
+
+    def extract_key_words(self, text):
+        """
+        Extract key words from text for pre-filtering.
+        
+        Args:
+            text (str): Text to extract words from
+        
+        Returns:
+            list: List of cleaned key words
+        """
+        if not text:
+            return []
+        
+        # Clean the text
+        cleaned = self.clean_string(text)
+        
+        # Split into words and filter
+        words = cleaned.split()
+        
+        # Filter out very short words and common words
+        stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an'}
+        key_words = []
+        
+        for word in words:
+            if len(word) >= 2 and word.lower() not in stop_words:
+                key_words.append(word)
+        
+        return key_words
+   
     def match_strings(self, str1, str2):
         """
         Match two strings and return similarity score.
@@ -165,6 +194,7 @@ class StringMatcher:
     def find_matches(self, query_artist, query_title, file_metadata_list):
         """
         Find matches for a song query in a list of file metadata.
+        Uses pre-filtering for better performance with large collections.
         
         Args:
             query_artist (str): Artist to match
@@ -174,6 +204,44 @@ class StringMatcher:
         Returns:
             list: List of match results, sorted by score
         """
+        # If we have a small list, use the old method
+        if len(file_metadata_list) < 5000:
+            return self._find_matches_original(query_artist, query_title, file_metadata_list)
+        
+        # For large lists, we should use pre-filtering
+        # This method is called with the full file list, so we'll still process all
+        # but we'll add early termination for better performance
+        matches = []
+        excellent_matches = []  # Matches with score >= 95
+        
+        for metadata in file_metadata_list:
+            match_result = self.match_song(query_artist, query_title, metadata)
+            
+            if match_result['is_match']:
+                # Add full metadata to match result
+                match_result.update(metadata)
+                
+                if match_result['combined_score'] >= 95:
+                    excellent_matches.append(match_result)
+                    # If we found 3 excellent matches, we probably have what we need
+                    if len(excellent_matches) >= 3:
+                        matches.extend(excellent_matches)
+                        break
+                else:
+                    matches.append(match_result)
+        
+        # If we didn't find excellent matches, use all matches
+        if len(excellent_matches) < 3:
+            matches.extend(excellent_matches)
+        
+        # Sort matches by combined score (descending)
+        matches.sort(key=lambda x: x['combined_score'], reverse=True)
+        
+        # Limit results to top 20 to avoid overwhelming the UI
+        return matches[:20]
+
+    def _find_matches_original(self, query_artist, query_title, file_metadata_list):
+        """Original find_matches method for smaller lists."""
         matches = []
         
         for metadata in file_metadata_list:
@@ -234,3 +302,32 @@ class StringMatcher:
             logger.error(f"Error processing match file {match_file_path}: {str(e)}")
         
         return results
+
+def extract_key_words(self, text):
+    """
+    Extract key words from text for pre-filtering.
+    
+    Args:
+        text (str): Text to extract words from
+    
+    Returns:
+        list: List of cleaned key words
+    """
+    if not text:
+        return []
+    
+    # Clean the text
+    cleaned = self.clean_string(text)
+    
+    # Split into words and filter
+    words = cleaned.split()
+    
+    # Filter out very short words and common words
+    stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an'}
+    key_words = []
+    
+    for word in words:
+        if len(word) >= 2 and word.lower() not in stop_words:
+            key_words.append(word)
+    
+    return key_words

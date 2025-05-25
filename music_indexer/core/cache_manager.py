@@ -572,3 +572,78 @@ class CacheManager:
                 'formats': {},
                 'avg_bitrate': 0
             }
+            
+    def get_candidate_files(self, artist_words=None, title_words=None, limit=1000):
+        """
+        Get candidate files using fast SQL filtering before fuzzy matching.
+        
+        Args:
+            artist_words (list): List of words from artist name
+            title_words (list): List of words from title
+            limit (int): Maximum number of candidates to return
+        
+        Returns:
+            list: List of candidate file metadata
+        """
+        try:
+            conn = sqlite3.connect(self.cache_file)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            conditions = []
+            params = []
+            
+            # Add conditions for artist words
+            if artist_words:
+                for word in artist_words:
+                    if len(word) >= 2:  # Skip very short words
+                        word_pattern = f"%{word}%"
+                        conditions.append("(LOWER(artist) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
+                        params.extend([word_pattern, word_pattern])
+            
+            # Add conditions for title words
+            if title_words:
+                for word in title_words:
+                    if len(word) >= 2:  # Skip very short words
+                        word_pattern = f"%{word}%"
+                        conditions.append("(LOWER(title) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
+                        params.extend([word_pattern, word_pattern])
+            
+            if not conditions:
+                # Fallback to all files if no conditions
+                return self.get_all_files(limit)
+            
+            # Combine conditions with OR (at least one word must match)
+            sql = f"SELECT * FROM files WHERE {' OR '.join(conditions)} LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            
+            results = []
+            for row in rows:
+                # Convert row to dictionary
+                metadata = dict(row)
+                
+                # Parse extra_data JSON
+                if 'extra_data' in metadata and metadata['extra_data']:
+                    try:
+                        extra_data = json.loads(metadata['extra_data'])
+                        metadata.update(extra_data)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse extra_data JSON for {metadata.get('file_path', 'unknown')}")
+                
+                # Remove extra_data field to avoid duplication
+                if 'extra_data' in metadata:
+                    del metadata['extra_data']
+                
+                results.append(metadata)
+            
+            conn.close()
+            
+            logger.debug(f"Pre-filtering found {len(results)} candidates from {artist_words} + {title_words}")
+            return results
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error getting candidate files: {str(e)}")
+            return []
