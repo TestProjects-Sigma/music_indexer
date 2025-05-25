@@ -435,20 +435,214 @@ class SettingsPanel(QWidget):
     
     def _apply_theme(self, theme):
         """Apply the selected theme."""
-        # [Theme application code remains the same as in original]
-        # ... (keeping existing theme code to save space)
         from PyQt5.QtWidgets import QApplication
+        
+        app = QApplication.instance()
         
         if theme == "Dark":
             # Apply dark theme stylesheet
-            pass
+            dark_style = """
+            QMainWindow, QWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QTabWidget::pane {
+                border: 1px solid #555555;
+                background-color: #2b2b2b;
+            }
+            QTabBar::tab {
+                background-color: #404040;
+                color: #ffffff;
+                padding: 8px 16px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: #555555;
+            }
+            QGroupBox {
+                color: #ffffff;
+                border: 2px solid #555555;
+                border-radius: 5px;
+                margin-top: 1ex;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+            QPushButton {
+                background-color: #404040;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+            QPushButton:pressed {
+                background-color: #606060;
+            }
+            QLineEdit, QTextEdit, QListWidget, QTreeWidget {
+                background-color: #404040;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QComboBox {
+                background-color: #404040;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 2px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 4px solid #ffffff;
+            }
+            QSlider::groove:horizontal {
+                background-color: #404040;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background-color: #ffffff;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QCheckBox {
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+            }
+            QMenuBar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QMenuBar::item:selected {
+                background-color: #404040;
+            }
+            QMenu {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QMenu::item:selected {
+                background-color: #404040;
+            }
+            QStatusBar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            """
+            app.setStyleSheet(dark_style)
+            logger.info("Applied dark theme")
+            
         elif theme == "Light":
-            # Apply light theme stylesheet  
-            pass
-        else:
-            QApplication.instance().setStyleSheet("")
-        
-        logger.info(f"Applied {theme.lower()} theme")
+            # Apply light theme stylesheet
+            light_style = """
+            QMainWindow, QWidget {
+                background-color: #ffffff;
+                color: #000000;
+            }
+            QTabWidget::pane {
+                border: 1px solid #cccccc;
+                background-color: #ffffff;
+            }
+            QTabBar::tab {
+                background-color: #f0f0f0;
+                color: #000000;
+                padding: 8px 16px;
+                margin-right: 2px;
+                border: 1px solid #cccccc;
+            }
+            QTabBar::tab:selected {
+                background-color: #ffffff;
+                border-bottom: 1px solid #ffffff;
+            }
+            QGroupBox {
+                color: #000000;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin-top: 1ex;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+            QPushButton {
+                background-color: #f0f0f0;
+                color: #000000;
+                border: 1px solid #cccccc;
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+            QPushButton:pressed {
+                background-color: #d0d0d0;
+            }
+            QLineEdit, QTextEdit, QListWidget, QTreeWidget {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+            }
+            QComboBox {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+                padding: 2px;
+            }
+            QSlider::groove:horizontal {
+                background-color: #e0e0e0;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background-color: #0078d4;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QCheckBox {
+                color: #000000;
+            }
+            QLabel {
+                color: #000000;
+            }
+            QMenuBar {
+                background-color: #f0f0f0;
+                color: #000000;
+            }
+            QMenuBar::item:selected {
+                background-color: #e0e0e0;
+            }
+            QMenu {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+            }
+            QMenu::item:selected {
+                background-color: #e0e0e0;
+            }
+            QStatusBar {
+                background-color: #f0f0f0;
+                color: #000000;
+            }
+            """
+            app.setStyleSheet(light_style)
+            logger.info("Applied light theme")
+            
+        else:  # System Default
+            app.setStyleSheet("")
+            logger.info("Applied system default theme")
     
     def closeEvent(self, event):
         """Handle panel close event."""

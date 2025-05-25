@@ -396,9 +396,12 @@ class MainWindow(QMainWindow):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         theme = settings.value("appearance/theme", "System Default")
         
+        logger.info(f"Loading saved theme: {theme}")
+        
         # Find the settings panel to apply the theme
         if hasattr(self, 'settings_panel'):
             self.settings_panel._apply_theme(theme)
+            logger.info(f"Applied theme: {theme}")
         else:
             logger.warning("Settings panel not found, couldn't apply theme")
 
