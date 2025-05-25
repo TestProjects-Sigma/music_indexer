@@ -124,10 +124,50 @@ class AutoSearch:
             matches = self.string_matcher.find_matches(artist, title, all_files)
         
         return matches
+
+    def _find_matches_for_pair_parallel(self, artist, title):
+        """
+        Thread-safe version of _find_matches_for_pair for parallel processing.
+        
+        Args:
+            artist (str): Artist to match
+            title (str): Title to match
+        
+        Returns:
+            list: List of matches sorted by score
+        """
+        try:
+            # Extract key words for pre-filtering
+            artist_words = self.string_matcher.extract_key_words(artist) if artist else []
+            title_words = self.string_matcher.extract_key_words(title) if title else []
+            
+            # If we have key words, use pre-filtering
+            if artist_words or title_words:
+                candidate_files = self.cache_manager.get_candidate_files(
+                    artist_words=artist_words,
+                    title_words=title_words,
+                    limit=500  # Reduced limit for parallel processing
+                )
+                
+                logger.debug(f"Pre-filtering: {len(candidate_files)} candidates for '{artist} - {title}'")
+                
+                # Use the candidates for fuzzy matching
+                matches = self.string_matcher.find_matches(artist, title, candidate_files)
+            else:
+                # Fallback: get a reasonable subset of files for matching
+                logger.debug(f"No key words found, using limited search for '{artist} - {title}'")
+                all_files = self.cache_manager.get_all_files(limit=5000)  # Limit for performance
+                matches = self.string_matcher.find_matches(artist, title, all_files)
+            
+            return matches
+            
+        except Exception as e:
+            logger.error(f"Error in parallel worker for '{artist} - {title}': {str(e)}")
+            return []
     
     def process_match_file(self, file_path, show_progress=True):
         """
-        Process a match file and find matches for each entry.
+        Process a match file and find matches for each entry using parallel processing.
         
         Args:
             file_path (str): Path to match file
@@ -136,6 +176,9 @@ class AutoSearch:
         Returns:
             list: List of results for each line containing line, artist, title, matches
         """
+        from concurrent.futures import ThreadPoolExecutor
+        import multiprocessing
+        
         # Load pairs from match file
         pairs = self._load_match_file(file_path)
         
@@ -143,37 +186,66 @@ class AutoSearch:
             logger.warning(f"No valid entries found in match file: {file_path}")
             return []
         
-        # We don't need to load all files anymore since we use pre-filtering
-        # But we'll keep this for logging purposes
+        # Get cache stats for logging
         cache_stats = self.cache_manager.get_cache_stats()
         logger.info(f"Processing {len(pairs)} entries against {cache_stats['total_files']} indexed files")
         
-        # Process each pair
+        # Determine optimal number of worker threads
+        # Use number of CPU cores, but cap it to avoid overwhelming the system
+        max_workers = min(multiprocessing.cpu_count(), len(pairs), 8)  # Max 8 threads
+        logger.info(f"Using {max_workers} parallel workers for processing")
+        
         results = []
         
         if show_progress:
-            progress_bar = tqdm(total=len(pairs), desc="Processing matches", unit="entry")
+            progress_bar = tqdm(total=len(pairs), desc="Processing matches (parallel)", unit="entry")
         
-        for line_num, line, artist, title in pairs:
-            # Find matches using pre-filtering (pass empty list since we don't use it)
-            matches = self._find_matches_for_pair(artist, title, [])
+        # Process entries in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_data = {}
+            for line_num, line, artist, title in pairs:
+                future = executor.submit(self._find_matches_for_pair_parallel, artist, title)
+                future_to_data[future] = (line_num, line, artist, title)
             
-            # Create result dictionary for each line
-            results.append({
-                'line_num': line_num,
-                'line': line,
-                'artist': artist,
-                'title': title,
-                'matches': matches
-            })
-            
-            if show_progress:
-                progress_bar.update(1)
+            # Collect results as they complete
+            from concurrent.futures import as_completed
+            for future in as_completed(future_to_data):
+                line_num, line, artist, title = future_to_data[future]
+                
+                try:
+                    matches = future.result()
+                    
+                    # Create result dictionary
+                    results.append({
+                        'line_num': line_num,
+                        'line': line,
+                        'artist': artist,
+                        'title': title,
+                        'matches': matches
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error processing '{artist} - {title}': {str(e)}")
+                    # Add empty result for failed entries
+                    results.append({
+                        'line_num': line_num,
+                        'line': line,
+                        'artist': artist,
+                        'title': title,
+                        'matches': []
+                    })
+                
+                if show_progress:
+                    progress_bar.update(1)
         
         if show_progress:
             progress_bar.close()
         
-        logger.info(f"Processed {len(results)} entries from match file")
+        # Sort results by line number to maintain original order
+        results.sort(key=lambda x: x['line_num'])
+        
+        logger.info(f"Parallel processing completed for {len(results)} entries")
         return results
     
     def save_results(self, results, output_file):
