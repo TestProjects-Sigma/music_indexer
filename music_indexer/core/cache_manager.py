@@ -68,10 +68,15 @@ class CacheManager:
             CREATE INDEX IF NOT EXISTS idx_file_path ON files(file_path)
             ''')
             
-            # Create indexes on commonly searched fields
+            # Create indexes on commonly searched fields for exact matching
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_artist ON files(artist)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_title ON files(title)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_album ON files(album)')
+
+            # Create indexes for case-insensitive LIKE queries (used in pre-filtering)
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_artist_lower ON files(LOWER(artist))')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_title_lower ON files(LOWER(title))')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_filename_lower ON files(LOWER(filename))')
             
             conn.commit()
             conn.close()
