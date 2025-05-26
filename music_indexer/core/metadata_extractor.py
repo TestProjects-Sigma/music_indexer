@@ -305,3 +305,75 @@ class MetadataExtractor:
         except Exception as e:
             logger.error(f"Error extracting basic metadata from {file_path}: {str(e)}")
             return None
+
+    def extract_metadata_parallel(self, file_paths, extract_audio_metadata=True, 
+                                callback=None, max_workers=None):
+        """
+        Extract metadata from multiple files using parallel processing.
+        
+        Args:
+            file_paths (list): List of file paths to process
+            extract_audio_metadata (bool): Whether to extract audio metadata
+            callback (function): Progress callback function
+            max_workers (int): Number of parallel workers (None for auto)
+        
+        Returns:
+            list: List of metadata dictionaries
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import multiprocessing
+        
+        if max_workers is None:
+            # Use fewer workers for metadata extraction since it's I/O intensive
+            max_workers = min(multiprocessing.cpu_count(), 6)
+        
+        logger.info(f"Starting parallel metadata extraction with {max_workers} workers")
+        logger.info(f"Processing {len(file_paths)} files (audio_metadata={extract_audio_metadata})")
+        
+        results = []
+        processed_count = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_path = {
+                executor.submit(self._extract_single_file_metadata, file_path, extract_audio_metadata): file_path 
+                for file_path in file_paths
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_path):
+                file_path = future_to_path[future]
+                processed_count += 1
+                
+                try:
+                    metadata = future.result()
+                    if metadata:
+                        results.append(metadata)
+                    
+                    # Progress callback every 100 files or at the end
+                    if callback and (processed_count % 100 == 0 or processed_count == len(file_paths)):
+                        progress_percentage = int((processed_count / len(file_paths)) * 100)
+                        callback(processed_count, f"Processed {processed_count}/{len(file_paths)} files ({progress_percentage}%)")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {file_path}: {str(e)}")
+        
+        logger.info(f"Parallel metadata extraction complete: processed {len(results)} files")
+        return results
+
+    def _extract_single_file_metadata(self, file_path, extract_audio_metadata=True):
+        """
+        Extract metadata from a single file (thread-safe version).
+        
+        Args:
+            file_path (str): Path to audio file
+            extract_audio_metadata (bool): Whether to extract audio metadata
+        
+        Returns:
+            dict: Metadata dictionary or None if failed
+        """
+        try:
+            return self.extract_metadata(file_path, extract_audio_metadata)
+        except Exception as e:
+            logger.error(f"Error extracting metadata from {file_path}: {str(e)}")
+            return None

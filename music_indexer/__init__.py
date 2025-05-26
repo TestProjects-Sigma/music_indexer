@@ -74,79 +74,107 @@ class MusicIndexer:
         """
         return self.config_manager.remove_music_directory(directory)
   
-    def index_files(self, recursive=True, callback=None):
+    def index_files(self, directories=None, extract_audio_metadata=True, progress_callback=None):
         """
-        Index music files in configured directories.
+        Index audio files from specified directories using parallel processing.
         
         Args:
-            recursive (bool): Whether to scan subdirectories
-            callback (function): Optional callback function to report progress
+            directories (list): List of directories to scan
+            extract_audio_metadata (bool): Whether to extract audio metadata
+            progress_callback (function): Progress update callback
         
         Returns:
-            bool: True if indexing completed successfully, False otherwise
+            dict: Results summary
         """
-        if self.indexing_in_progress:
-            logger.warning("Indexing already in progress")
-            return False
+        import time
         
-        self.indexing_in_progress = True
+        if directories is None:
+            directories = self.config_manager.get_music_directories()
         
+        if not directories:
+            logger.warning("No directories specified for indexing")
+            return {'success': False, 'message': 'No directories specified'}
+        
+        start_time = time.time()
+        mode = "full metadata" if extract_audio_metadata else "fast mode"
+        logger.info(f"Starting parallel indexing in {mode}")
+        
+        # Phase 1: Scan directories for files (parallel)
+        if progress_callback:
+            progress_callback(0, "Scanning directories for audio files...")
+        
+        audio_files = self.file_scanner.scan_directories_parallel(
+            directories, 
+            callback=lambda count, msg: progress_callback(count, f"Scanning: {msg}") if progress_callback else None
+        )
+        
+        if not audio_files:
+            logger.warning("No audio files found in specified directories")
+            return {'success': False, 'message': 'No audio files found'}
+        
+        logger.info(f"Found {len(audio_files)} audio files to process")
+        
+        # Phase 2: Filter out already indexed files
+        if progress_callback:
+            progress_callback(len(audio_files), "Checking for existing files...")
+        
+        # Get existing files from cache
+        existing_files = set()
         try:
-            # Get music directories
-            directories = self.get_music_directories()
-            
-            if not directories:
-                logger.warning("No music directories configured")
-                self.indexing_in_progress = False
-                return False
-            
-            # Scan directories for audio files
-            logger.info(f"Starting file scan in {len(directories)} directories")
-            audio_files = self.file_scanner.scan_multiple_directories(directories, recursive)
-            
-            if not audio_files:
-                logger.warning("No audio files found in configured directories")
-                self.indexing_in_progress = False
-                return False
-            
-            logger.info(f"Found {len(audio_files)} audio files")
-            
-            # Clean missing files from cache
-            self.cache_manager.clean_missing_files()
-            
-            # Extract metadata and cache
-            logger.info("Extracting metadata and updating cache")
-            
-            metadata_list = []
-            total_files = len(audio_files)
-            
-            # Process files one by one
-            for i, file_path in enumerate(audio_files):
-                # Extract metadata
-                metadata = self.metadata_extractor.extract_metadata(file_path)
-                
-                if metadata:
-                    # Cache metadata directly - don't collect in memory
-                    self.cache_manager.cache_file_metadata(metadata)
-                
-                # Report progress
-                if callback:
-                    progress = (i + 1) / total_files * 100
-                    callback(progress, f"Processed {i + 1} of {total_files} files")
-            
-            # Get cache stats
-            stats = self.cache_manager.get_cache_stats()
-            logger.info(f"Indexing completed. Cache contains {stats['total_files']} files")
-            
-            self.indexing_in_progress = False
-            return True
-        
+            cached_files = self.cache_manager.get_all_files()
+            existing_files = {f.get('file_path', '') for f in cached_files}
+            logger.info(f"Found {len(existing_files)} already indexed files")
         except Exception as e:
-            logger.error(f"Error during indexing: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            self.indexing_in_progress = False
-            return False  
+            logger.warning(f"Could not load existing files: {str(e)}")
+        
+        # Filter to only new files
+        new_files = [f for f in audio_files if f not in existing_files]
+        
+        if not new_files:
+            logger.info("All files are already indexed")
+            return {
+                'success': True, 
+                'message': f'All {len(audio_files)} files already indexed',
+                'total_files': len(audio_files),
+                'new_files': 0,
+                'processing_time': time.time() - start_time
+            }
+        
+        logger.info(f"Processing {len(new_files)} new files ({len(audio_files) - len(new_files)} already indexed)")
+        
+        # Phase 3: Extract metadata in parallel
+        if progress_callback:
+            progress_callback(0, f"Extracting metadata from {len(new_files)} new files...")
+        
+        metadata_list = self.metadata_extractor.extract_metadata_parallel(
+            new_files,
+            extract_audio_metadata=extract_audio_metadata,
+            callback=lambda count, msg: progress_callback(count, msg) if progress_callback else None
+        )
+        
+        # Phase 4: Store in cache
+        if progress_callback:
+            progress_callback(len(metadata_list), "Storing metadata in database...")
+        
+        stored_count = 0
+        for metadata in metadata_list:
+            if metadata and self.cache_manager.store_file_metadata(metadata):
+                stored_count += 1
+        
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        result = {
+            'success': True,
+            'message': f'Successfully indexed {stored_count} new files',
+            'total_files': len(audio_files),
+            'new_files': stored_count,
+            'already_indexed': len(existing_files),
+            'processing_time': processing_time
+        }
+        
+        logger.info(f"Parallel indexing complete: {stored_count} files processed in {processing_time:.2f} seconds")
+        return result  
      
     def index_files_async(self, recursive=True, extract_metadata=True, callback=None, complete_callback=None):
         """

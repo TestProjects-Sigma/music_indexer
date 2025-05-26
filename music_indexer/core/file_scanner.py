@@ -98,3 +98,86 @@ class FileScanner:
                 unique_files.append(file)
         
         return unique_files
+
+    def scan_directories_parallel(self, directories, callback=None, max_workers=None):
+        """
+        Scan directories for audio files using parallel processing.
+        
+        Args:
+            directories (list): List of directory paths to scan
+            callback (function): Progress callback function
+            max_workers (int): Number of parallel workers (None for auto)
+        
+        Returns:
+            list: List of audio file paths found
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import multiprocessing
+        import os
+        
+        if max_workers is None:
+            max_workers = min(multiprocessing.cpu_count(), len(directories), 8)
+        
+        logger.info(f"Starting parallel directory scan with {max_workers} workers")
+        
+        all_files = []
+        total_processed = 0
+        
+        # If we have fewer directories than workers, scan each directory in parallel
+        if len(directories) <= max_workers:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_dir = {executor.submit(self._scan_single_directory, directory): directory 
+                               for directory in directories}
+                
+                for future in as_completed(future_to_dir):
+                    directory = future_to_dir[future]
+                    try:
+                        files = future.result()
+                        all_files.extend(files)
+                        total_processed += len(files)
+                        
+                        logger.info(f"Scanned {directory}: found {len(files)} files")
+                        
+                        if callback:
+                            callback(total_processed, f"Scanned {os.path.basename(directory)}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error scanning directory {directory}: {str(e)}")
+        else:
+            # For many directories, scan them in batches
+            for directory in directories:
+                files = self._scan_single_directory(directory)
+                all_files.extend(files)
+                total_processed += len(files)
+                
+                logger.info(f"Scanned {directory}: found {len(files)} files")
+                
+                if callback:
+                    callback(total_processed, f"Scanned {os.path.basename(directory)}")
+        
+        logger.info(f"Parallel scan complete: found {len(all_files)} total files")
+        return all_files
+
+    def _scan_single_directory(self, directory):
+        """
+        Scan a single directory for audio files.
+        
+        Args:
+            directory (str): Directory path to scan
+        
+        Returns:
+            list: List of audio file paths in this directory
+        """
+        files = []
+        
+        try:
+            for root, dirs, filenames in os.walk(directory):
+                for filename in filenames:
+                    if self._is_audio_file(filename):
+                        file_path = os.path.join(root, filename)
+                        files.append(file_path)
+                        
+        except Exception as e:
+            logger.error(f"Error scanning directory {directory}: {str(e)}")
+        
+        return files
