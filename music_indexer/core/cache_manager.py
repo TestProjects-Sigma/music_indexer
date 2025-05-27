@@ -1,5 +1,6 @@
 """
 Cache manager for storing and retrieving audio file metadata using SQLite.
+FIXED VERSION - Improved pre-filtering logic
 """
 import os
 import sqlite3
@@ -581,6 +582,7 @@ class CacheManager:
     def get_candidate_files(self, artist_words=None, title_words=None, limit=1000):
         """
         Get candidate files using fast SQL filtering before fuzzy matching.
+        IMPROVED: More conservative and flexible pre-filtering.
         
         Args:
             artist_words (list): List of words from artist name
@@ -598,29 +600,38 @@ class CacheManager:
             conditions = []
             params = []
             
+            # Create more flexible conditions - use OR instead of requiring all words
+            word_conditions = []
+            
             # Add conditions for artist words
             if artist_words:
                 for word in artist_words:
-                    if len(word) >= 2:  # Skip very short words
+                    if len(word) >= 2:  # Only use words with 2+ characters
                         word_pattern = f"%{word}%"
-                        conditions.append("(LOWER(artist) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
-                        params.extend([word_pattern, word_pattern])
+                        # Search in artist, title, and filename for maximum flexibility
+                        word_conditions.append("(LOWER(artist) LIKE LOWER(?) OR LOWER(title) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
+                        params.extend([word_pattern, word_pattern, word_pattern])
             
             # Add conditions for title words
             if title_words:
                 for word in title_words:
-                    if len(word) >= 2:  # Skip very short words
+                    if len(word) >= 2:  # Only use words with 2+ characters
                         word_pattern = f"%{word}%"
-                        conditions.append("(LOWER(title) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
-                        params.extend([word_pattern, word_pattern])
+                        # Search in artist, title, and filename for maximum flexibility
+                        word_conditions.append("(LOWER(artist) LIKE LOWER(?) OR LOWER(title) LIKE LOWER(?) OR LOWER(filename) LIKE LOWER(?))")
+                        params.extend([word_pattern, word_pattern, word_pattern])
             
-            if not conditions:
-                # Fallback to all files if no conditions
+            if not word_conditions:
+                # If no valid words, return all files (limited)
+                logger.debug("No valid search words, returning all files")
                 return self.get_all_files(limit)
             
-            # Combine conditions with OR (at least one word must match)
-            sql = f"SELECT * FROM files WHERE {' OR '.join(conditions)} LIMIT ?"
+            # Combine word conditions with OR (at least one word must match somewhere)
+            sql = f"SELECT * FROM files WHERE {' OR '.join(word_conditions)} LIMIT ?"
             params.append(limit)
+            
+            logger.debug(f"Pre-filter SQL: {sql}")
+            logger.debug(f"Pre-filter params: {params[:6]}...")  # Show first few params
             
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -646,9 +657,13 @@ class CacheManager:
             
             conn.close()
             
-            logger.debug(f"Pre-filtering found {len(results)} candidates from {artist_words} + {title_words}")
+            all_words = (artist_words or []) + (title_words or [])
+            logger.debug(f"Pre-filtering with words {all_words} found {len(results)} candidates")
             return results
             
         except sqlite3.Error as e:
             logger.error(f"Error getting candidate files: {str(e)}")
-            return []
+            # Fallback to all files if there's an error
+            logger.info("Falling back to all files due to pre-filter error")
+            return self.get_all_files(limit)
+            

@@ -1,8 +1,8 @@
 """
 String matcher module for flexible matching of music files.
+CLEAN FIXED VERSION - Complete rewrite
 """
 from fuzzywuzzy import fuzz
-from fuzzywuzzy import process
 import re
 
 from ..utils.logger import get_logger
@@ -47,16 +47,37 @@ class StringMatcher:
         if not text:
             return ""
         
-        # Convert to lowercase
+        # Convert to lowercase first
         text = text.lower()
         
-        # Replace special characters with space
-        text = re.sub(r'[_\-.]', ' ', text)
+        # Replace common separators with spaces
+        text = re.sub(r'[_\-.\(\)\[\]{}]', ' ', text)
         
-        # Remove any non-alphanumeric characters (except spaces)
-        text = re.sub(r'[^\w\s]', '', text)
+        # Remove file extensions if present
+        text = re.sub(r'\.(mp3|flac|m4a|aac|wav|ogg)$', '', text, flags=re.IGNORECASE)
         
-        # Normalize whitespace (replace multiple spaces with single space)
+        # Remove common remix/version indicators
+        remix_patterns = [
+            r'\s*-\s*.*?\s*remix\s*$',
+            r'\s*-\s*.*?\s*mix\s*$',
+            r'\s*-\s*original\s*mix\s*$',
+            r'\s*-\s*radio\s*edit\s*$',
+            r'\s*\(.*?\s*remix.*?\)\s*$',
+            r'\s*\(.*?\s*mix.*?\)\s*$',
+        ]
+        
+        original_text = text
+        for pattern in remix_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # If we removed too much, keep the original
+        if len(text.strip()) < len(original_text.strip()) * 0.4:
+            text = original_text
+        
+        # Remove any remaining special characters except spaces and alphanumeric
+        text = re.sub(r'[^\w\s]', ' ', text)
+        
+        # Normalize whitespace
         text = re.sub(r'\s+', ' ', text)
         
         # Strip leading/trailing whitespace
@@ -80,11 +101,11 @@ class StringMatcher:
         # Clean the text
         cleaned = self.clean_string(text)
         
-        # Split into words and filter
+        # Split into words
         words = cleaned.split()
         
         # Filter out very short words and common words
-        stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an'}
+        stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an', 'is', 'are', 'was', 'were'}
         key_words = []
         
         for word in words:
@@ -92,6 +113,96 @@ class StringMatcher:
                 key_words.append(word)
         
         return key_words
+
+    def extract_artist_variants(self, artist_text):
+        """
+        Extract different variants of artist names for better matching.
+        
+        Args:
+            artist_text (str): Original artist text
+        
+        Returns:
+            list: List of artist name variants to try
+        """
+        if not artist_text:
+            return []
+        
+        variants = [artist_text]  # Include original
+        
+        # Handle common collaboration separators
+        collaboration_separators = [', ', ' & ', ' and ', ' feat. ', ' feat ', ' ft. ', ' ft ', ' vs. ', ' vs ', ' x ']
+        
+        for sep in collaboration_separators:
+            if sep in artist_text.lower():
+                # Split and try individual artists
+                parts = re.split(re.escape(sep), artist_text, flags=re.IGNORECASE)
+                for part in parts:
+                    clean_part = part.strip()
+                    if clean_part and len(clean_part) > 1:
+                        variants.append(clean_part)
+                
+                # Also try concatenated version
+                concat_version = '_and_'.join([p.strip() for p in parts if p.strip()])
+                variants.append(concat_version)
+                
+                # Try with just "and"
+                and_version = ' and '.join([p.strip() for p in parts if p.strip()])
+                variants.append(and_version)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variants = []
+        for variant in variants:
+            variant_lower = variant.lower()
+            if variant_lower not in seen:
+                seen.add(variant_lower)
+                unique_variants.append(variant)
+        
+        return unique_variants
+
+    def extract_title_variants(self, title_text):
+        """
+        Extract different variants of titles for better matching.
+        
+        Args:
+            title_text (str): Original title text
+        
+        Returns:
+            list: List of title variants to try
+        """
+        if not title_text:
+            return []
+        
+        variants = [title_text]  # Include original
+        
+        # Try without remix/mix information
+        base_title = title_text
+        
+        # Remove remix/mix suffixes
+        remix_patterns = [
+            r'\s*-\s*.*?\s*remix.*?$',
+            r'\s*-\s*.*?\s*mix.*?$', 
+            r'\s*-\s*original.*?$',
+            r'\s*-\s*radio\s*edit.*?$',
+            r'\s*\(.*?\s*remix.*?\).*?$',
+            r'\s*\(.*?\s*mix.*?\).*?$',
+        ]
+        
+        for pattern in remix_patterns:
+            cleaned = re.sub(pattern, '', base_title, flags=re.IGNORECASE).strip()
+            if cleaned and len(cleaned) >= 2:
+                variants.append(cleaned)
+        
+        # Remove duplicates
+        seen = set()
+        unique_variants = []
+        for variant in variants:
+            variant_lower = variant.lower()
+            if variant_lower not in seen:
+                seen.add(variant_lower)
+                unique_variants.append(variant)
+        
+        return unique_variants
    
     def match_strings(self, str1, str2):
         """
@@ -114,16 +225,81 @@ class StringMatcher:
         if not clean_str1 or not clean_str2:
             return 0
         
+        # For very short strings, be more conservative
+        if len(clean_str1) <= 2 or len(clean_str2) <= 2:
+            if clean_str1 == clean_str2:
+                return 100
+            else:
+                return 0
+        
         # Calculate similarity scores using different algorithms
         ratio = fuzz.ratio(clean_str1, clean_str2)
         partial_ratio = fuzz.partial_ratio(clean_str1, clean_str2)
         token_sort_ratio = fuzz.token_sort_ratio(clean_str1, clean_str2)
-        token_set_ratio = fuzz.token_set_ratio(clean_str1, clean_str2)
         
-        # Use the highest score
-        score = max(ratio, partial_ratio, token_sort_ratio, token_set_ratio)
+        # Be careful with token_set_ratio - avoid single character matches
+        tokens1 = set(clean_str1.split())
+        tokens2 = set(clean_str2.split())
+        
+        if (len(tokens1) > 1 and len(tokens2) > 1 and 
+            all(len(token) >= 2 for token in tokens1) and 
+            all(len(token) >= 2 for token in tokens2)):
+            token_set_ratio = fuzz.token_set_ratio(clean_str1, clean_str2)
+        else:
+            token_set_ratio = 0
+        
+        # Check for meaningful containment
+        containment_score = 0
+        if len(clean_str1) >= 3 and len(clean_str2) >= 3:
+            if clean_str1 in clean_str2 or clean_str2 in clean_str1:
+                shorter_len = min(len(clean_str1), len(clean_str2))
+                longer_len = max(len(clean_str1), len(clean_str2))
+                
+                if shorter_len / longer_len >= 0.3:
+                    containment_score = 85
+        
+        # Use the highest score among valid methods
+        score = max(ratio, partial_ratio, token_sort_ratio, token_set_ratio, containment_score)
         
         return score
+    
+    def match_against_filename(self, query, filename):
+        """
+        Match query against filename with special handling for filename patterns.
+        
+        Args:
+            query (str): Search query
+            filename (str): Filename to match against
+        
+        Returns:
+            int: Match score (0-100)
+        """
+        if not query or not filename:
+            return 0
+        
+        # Basic string matching using fuzzy algorithms
+        basic_score = self.match_strings(query, filename)
+        
+        # Check for meaningful substring matches
+        clean_query = self.clean_string(query)
+        clean_filename = self.clean_string(filename)
+        
+        if clean_query and clean_filename and len(clean_query) >= 3:
+            if clean_query in clean_filename:
+                query_length = len(clean_query)
+                filename_length = len(clean_filename)
+                
+                if query_length >= 4:
+                    coverage = query_length / filename_length
+                    
+                    if coverage >= 0.15:
+                        substring_score = min(85, int(70 + coverage * 30))
+                        basic_score = max(basic_score, substring_score)
+                    elif coverage >= 0.05:
+                        substring_score = min(75, int(60 + coverage * 50))
+                        basic_score = max(basic_score, substring_score)
+        
+        return basic_score
     
     def is_match(self, str1, str2):
         """
@@ -153,30 +329,107 @@ class StringMatcher:
         """
         artist_score = 0
         title_score = 0
+        filename_score = 0
         
-        # Get artist and title from metadata
+        # Get metadata fields
         file_artist = file_metadata.get('artist', '')
         file_title = file_metadata.get('title', '')
+        filename = file_metadata.get('filename', '')
         
-        # Match artist if provided
-        if query_artist and file_artist:
-            artist_score = self.match_strings(query_artist, file_artist)
+        # Match artist if provided - try multiple variants
+        if query_artist and len(query_artist.strip()) >= 2:
+            artist_variants = self.extract_artist_variants(query_artist)
+            
+            # Try matching against metadata artist
+            if file_artist:
+                for variant in artist_variants:
+                    variant_score = self.match_strings(variant, file_artist)
+                    artist_score = max(artist_score, variant_score)
+            
+            # Also try matching against filename if score is still low
+            if artist_score < self.threshold and filename:
+                for variant in artist_variants:
+                    filename_artist_score = self.match_against_filename(variant, filename)
+                    artist_score = max(artist_score, filename_artist_score)
         
-        # Match title if provided
-        if query_title and file_title:
-            title_score = self.match_strings(query_title, file_title)
+        # Match title if provided - try multiple variants
+        if query_title and len(query_title.strip()) >= 2:
+            title_variants = self.extract_title_variants(query_title)
+            
+            # Try matching against metadata title
+            if file_title:
+                for variant in title_variants:
+                    variant_score = self.match_strings(variant, file_title)
+                    title_score = max(title_score, variant_score)
+            
+            # Also try matching against filename if score is still low
+            if title_score < self.threshold and filename:
+                for variant in title_variants:
+                    filename_title_score = self.match_against_filename(variant, filename)
+                    title_score = max(title_score, filename_title_score)
         
-        # Calculate combined score
-        # If both artist and title are provided, use weighted average
-        if query_artist and query_title:
-            combined_score = (artist_score + title_score) / 2
-        # If only one is provided, use that score
-        elif query_artist:
-            combined_score = artist_score
-        elif query_title:
-            combined_score = title_score
+        # Combined filename matching with variants
+        if filename and (query_artist or query_title):
+            combined_variants = []
+            
+            if query_artist:
+                artist_variants = self.extract_artist_variants(query_artist)
+                artist_variants.sort(key=len)
+                combined_variants.extend(artist_variants[:2])
+            
+            if query_title:
+                title_variants = self.extract_title_variants(query_title)
+                title_variants.sort(key=len)
+                combined_variants.extend(title_variants[:2])
+            
+            if combined_variants:
+                for variant in combined_variants:
+                    if len(variant) >= 3:
+                        variant_filename_score = self.match_against_filename(variant, filename)
+                        filename_score = max(filename_score, variant_filename_score)
+        
+        # Calculate combined score with flexible logic for collaborations
+        if query_artist and query_title and len(query_artist.strip()) >= 2 and len(query_title.strip()) >= 2:
+            # Both artist and title provided
+            
+            # Be more lenient if we detect this might be a collaboration
+            is_collaboration = any(sep in query_artist.lower() for sep in [', ', ' & ', ' and ', ' feat', ' ft', ' vs', ' x '])
+            
+            if is_collaboration:
+                min_required_score = max(50, self.threshold - 25)
+            else:
+                min_required_score = max(60, self.threshold - 15)
+            
+            if artist_score >= min_required_score and title_score >= min_required_score:
+                combined_score = (artist_score + title_score) / 2
+            elif artist_score >= self.threshold:
+                weight = 0.8 if is_collaboration else 0.7
+                combined_score = artist_score * weight + title_score * (1 - weight)
+            elif title_score >= self.threshold:
+                weight = 0.8 if is_collaboration else 0.7
+                combined_score = title_score * weight + artist_score * (1 - weight)
+            elif filename_score >= (self.threshold + 5):
+                combined_score = filename_score * 0.7
+            else:
+                combined_score = max(artist_score, title_score, filename_score) * 0.5
+                
+        elif query_artist and len(query_artist.strip()) >= 2:
+            combined_score = max(artist_score, filename_score * 0.9)
+        elif query_title and len(query_title.strip()) >= 2:
+            combined_score = max(title_score, filename_score * 0.9)
         else:
             combined_score = 0
+        
+        # Reduce penalty for score differences in collaborations
+        if (query_artist and query_title and 
+            len(query_artist.strip()) >= 2 and len(query_title.strip()) >= 2):
+            
+            is_collaboration = any(sep in query_artist.lower() for sep in [', ', ' & ', ' and ', ' feat', ' ft', ' vs', ' x '])
+            
+            if not is_collaboration:
+                score_diff = abs(artist_score - title_score)
+                if score_diff > 40:
+                    combined_score *= 0.85
         
         # Check if match exceeds threshold
         is_match = combined_score >= self.threshold
@@ -185,8 +438,10 @@ class StringMatcher:
             'file_path': file_metadata.get('file_path', ''),
             'artist': file_artist,
             'title': file_title,
+            'filename': filename,
             'artist_score': artist_score,
             'title_score': title_score,
+            'filename_score': filename_score,
             'combined_score': combined_score,
             'is_match': is_match
         }
@@ -194,7 +449,6 @@ class StringMatcher:
     def find_matches(self, query_artist, query_title, file_metadata_list):
         """
         Find matches for a song query in a list of file metadata.
-        Uses pre-filtering for better performance with large collections.
         
         Args:
             query_artist (str): Artist to match
@@ -204,45 +458,9 @@ class StringMatcher:
         Returns:
             list: List of match results, sorted by score
         """
-        # If we have a small list, use the old method
-        if len(file_metadata_list) < 5000:
-            return self._find_matches_original(query_artist, query_title, file_metadata_list)
-        
-        # For large lists, we should use pre-filtering
-        # This method is called with the full file list, so we'll still process all
-        # but we'll add early termination for better performance
         matches = []
-        excellent_matches = []  # Matches with score >= 95
         
-        for metadata in file_metadata_list:
-            match_result = self.match_song(query_artist, query_title, metadata)
-            
-            if match_result['is_match']:
-                # Add full metadata to match result
-                match_result.update(metadata)
-                
-                if match_result['combined_score'] >= 95:
-                    excellent_matches.append(match_result)
-                    # If we found 3 excellent matches, we probably have what we need
-                    if len(excellent_matches) >= 3:
-                        matches.extend(excellent_matches)
-                        break
-                else:
-                    matches.append(match_result)
-        
-        # If we didn't find excellent matches, use all matches
-        if len(excellent_matches) < 3:
-            matches.extend(excellent_matches)
-        
-        # Sort matches by combined score (descending)
-        matches.sort(key=lambda x: x['combined_score'], reverse=True)
-        
-        # Limit results to top 20 to avoid overwhelming the UI
-        return matches[:20]
-
-    def _find_matches_original(self, query_artist, query_title, file_metadata_list):
-        """Original find_matches method for smaller lists."""
-        matches = []
+        logger.debug(f"Searching for artist='{query_artist}', title='{query_title}' in {len(file_metadata_list)} files")
         
         for metadata in file_metadata_list:
             match_result = self.match_song(query_artist, query_title, metadata)
@@ -255,79 +473,8 @@ class StringMatcher:
         # Sort matches by combined score (descending)
         matches.sort(key=lambda x: x['combined_score'], reverse=True)
         
-        return matches
-    
-    def process_match_file(self, match_file_path, file_metadata_list):
-        """
-        Process a match file with artist and title on each line.
+        # Limit results to top 50
+        limited_matches = matches[:50]
         
-        Args:
-            match_file_path (str): Path to match file
-            file_metadata_list (list): List of file metadata dictionaries
-        
-        Returns:
-            list: List of match results for each line
-        """
-        results = []
-        
-        try:
-            with open(match_file_path, 'r', encoding='utf-8') as file:
-                for line_num, line in enumerate(file, 1):
-                    line = line.strip()
-                    
-                    if not line or line.startswith('#'):
-                        continue  # Skip empty lines and comments
-                    
-                    # Try to parse artist and title
-                    parts = re.split(r' - ', line, maxsplit=1)
-                    
-                    if len(parts) == 2:
-                        artist, title = parts
-                    else:
-                        # If no separator found, assume the whole line is the title
-                        artist, title = "", line
-                    
-                    # Find matches
-                    matches = self.find_matches(artist, title, file_metadata_list)
-                    
-                    results.append({
-                        'line_num': line_num,
-                        'line': line,
-                        'artist': artist,
-                        'title': title,
-                        'matches': matches
-                    })
-        
-        except Exception as e:
-            logger.error(f"Error processing match file {match_file_path}: {str(e)}")
-        
-        return results
-
-def extract_key_words(self, text):
-    """
-    Extract key words from text for pre-filtering.
-    
-    Args:
-        text (str): Text to extract words from
-    
-    Returns:
-        list: List of cleaned key words
-    """
-    if not text:
-        return []
-    
-    # Clean the text
-    cleaned = self.clean_string(text)
-    
-    # Split into words and filter
-    words = cleaned.split()
-    
-    # Filter out very short words and common words
-    stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an'}
-    key_words = []
-    
-    for word in words:
-        if len(word) >= 2 and word.lower() not in stop_words:
-            key_words.append(word)
-    
-    return key_words
+        logger.debug(f"Found {len(matches)} matches (showing top {len(limited_matches)})")
+        return limited_matches
