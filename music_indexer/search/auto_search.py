@@ -1,6 +1,6 @@
 """
-Automatic search module for batch processing of music file matches.
-FIXED VERSION - Consistent with manual search behavior
+Auto search that primarily uses the proven "general query" logic from manual search.
+OPTIMIZED VERSION - Uses the same successful general query approach
 """
 import os
 import re
@@ -15,8 +15,8 @@ logger = get_logger()
 
 class AutoSearch:
     """
-    Provides automatic search functionality for music files.
-    Processes match files with artist/title pairs for batch matching.
+    Auto search that uses the proven general query approach.
+    OPTIMIZED: Primary strategy is general query (like successful manual search).
     """
     
     def __init__(self, cache_manager=None, string_matcher=None):
@@ -29,27 +29,33 @@ class AutoSearch:
         """
         self.cache_manager = cache_manager or CacheManager()
         self.string_matcher = string_matcher or StringMatcher()
-        logger.info("Automatic search initialized")
+        logger.info("General query auto search initialized")
     
     def _parse_match_line(self, line):
         """
-        Parse a line from a match file.
-        IMPROVED: Better parsing with multiple separator support.
+        Parse a line from a match file - keep it simple.
         
         Args:
             line (str): Line to parse
         
         Returns:
-            tuple: (artist, title) or (None, None) if invalid
+            dict: Parsed information
         """
         line = line.strip()
         
         # Skip empty lines and comments
         if not line or line.startswith('#'):
-            return None, None
+            return None
         
-        # Try to parse artist and title with various separators
+        # For auto search, we'll primarily use the original line as general query
+        # But also extract artist/title for potential fallback
+        original_line = line
+        
+        # Try to parse artist and title with common separators
         separators = [' - ', ' – ', ': ', ' : ', '_-_', ',', ' | ']
+        
+        artist = ""
+        title = ""
         
         for separator in separators:
             if separator in line:
@@ -57,175 +63,257 @@ class AutoSearch:
                 if len(parts) == 2:
                     artist = parts[0].strip()
                     title = parts[1].strip()
-                    # Don't return empty strings
-                    if artist and title:
-                        return artist, title
-                    elif title:  # Only title available
-                        return "", title
+                    break
         
-        # If no separator found, assume the whole line is the title
-        return "", line
+        # If no separator found, treat whole line as title
+        if not artist and not title:
+            title = line
+        
+        return {
+            'original_line': original_line,
+            'artist': artist,
+            'title': title
+        }
     
     def _load_match_file(self, file_path):
-        """
-        Load a match file and extract artist/title pairs.
-        
-        Args:
-            file_path (str): Path to match file
-        
-        Returns:
-            list: List of (line_num, line, artist, title) tuples
-        """
+        """Load and parse match file."""
         if not os.path.exists(file_path):
             logger.error(f"Match file not found: {file_path}")
             return []
         
-        pairs = []
+        entries = []
         
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 for line_num, line in enumerate(file, 1):
-                    original_line = line.strip()
-                    
-                    # Skip empty lines and comments
-                    if not original_line or original_line.startswith('#'):
-                        continue
-                    
-                    artist, title = self._parse_match_line(original_line)
-                    if artist is not None or title:
-                        pairs.append((line_num, original_line, artist, title))
+                    parsed = self._parse_match_line(line)
+                    if parsed:
+                        entries.append((line_num, parsed))
         
         except Exception as e:
             logger.error(f"Error loading match file {file_path}: {str(e)}")
         
-        logger.info(f"Loaded {len(pairs)} artist/title pairs from {file_path}")
-        return pairs
+        logger.info(f"Loaded {len(entries)} entries from {file_path}")
+        return entries
     
-    def _find_matches_for_pair(self, artist, title, use_pre_filtering=True):
+    def _find_matches_general_query_exact(self, query):
         """
-        Find matches for an artist/title pair.
-        IMPROVED: Better pre-filtering strategy for artist+title combinations.
+        Find matches using EXACT same logic as manual search "general query".
+        OPTIMIZED: Uses smart pre-filtering for better performance.
         
         Args:
-            artist (str): Artist to match
-            title (str): Title to match
-            use_pre_filtering (bool): Whether to use pre-filtering optimization
+            query (str): Search query
         
         Returns:
-            list: List of matches sorted by score
+            list: List of matches (exactly like manual search)
         """
-        # Use pre-filtering for better performance if enabled and we have search terms
-        if use_pre_filtering and (artist or title):
+        if not query or len(query.strip()) < 3:
+            return []
+        
+        logger.debug(f"General query search for: '{query}'")
+        
+        # PERFORMANCE OPTIMIZATION: Use smart pre-filtering for large collections
+        cache_stats = self.cache_manager.get_cache_stats()
+        total_files = cache_stats.get('total_files', 0)
+        
+        if total_files > 10000:
             # Extract key words for pre-filtering
-            artist_words = self.string_matcher.extract_key_words(artist) if artist else []
-            title_words = self.string_matcher.extract_key_words(title) if title else []
+            query_words = self._extract_query_words(query)
             
-            # Special strategy: if we have both artist and title, prioritize title words
-            # This helps avoid matches based only on common artist names like "DJ Paul"
-            if artist_words and title_words:
-                # Use more title words and fewer artist words for pre-filtering
-                # This helps find files that actually match the song title
-                primary_words = title_words
-                secondary_words = artist_words[:2]  # Limit artist words to avoid too many false matches
-                all_words = primary_words + secondary_words
+            if query_words and len(query_words) >= 2:
+                # Use pre-filtering with generous limits
+                candidate_files = self.cache_manager.get_candidate_files(
+                    artist_words=query_words[:3],  # First 3 words as artist keywords
+                    title_words=query_words[:3],   # First 3 words as title keywords  
+                    limit=5000  # Generous limit to avoid missing matches
+                )
                 
-                logger.debug(f"Artist+Title search: prioritizing title words {title_words} over artist words {artist_words[:2]}")
+                logger.debug(f"Pre-filtering: {len(candidate_files)} candidates from {total_files} files")
                 
-                candidate_files = self.cache_manager.get_candidate_files(
-                    artist_words=secondary_words,  # Limited artist words
-                    title_words=primary_words,     # Full title words
-                    limit=1500  # Slightly smaller limit for more focused results
-                )
-            elif artist_words:
-                candidate_files = self.cache_manager.get_candidate_files(
-                    artist_words=artist_words,
-                    title_words=None,
-                    limit=2000
-                )
-            elif title_words:
-                candidate_files = self.cache_manager.get_candidate_files(
-                    artist_words=None,
-                    title_words=title_words,
-                    limit=2000
-                )
+                # Safety check: if pre-filtering returns too few results, fall back to all files
+                if len(candidate_files) < 50:
+                    logger.debug("Too few candidates, using all files")
+                    candidate_files = self.cache_manager.get_all_files()
             else:
-                # Fallback to all files if no key words extracted
-                logger.debug(f"No key words found, using all files for '{artist} - {title}'")
+                # No good keywords, use all files
                 candidate_files = self.cache_manager.get_all_files()
-            
-            logger.debug(f"Pre-filtering: {len(candidate_files)} candidates for '{artist} - {title}'")
         else:
-            # Use all files (same as manual search)
-            logger.debug(f"Using all files for '{artist} - {title}'")
+            # Small collection, use all files
             candidate_files = self.cache_manager.get_all_files()
         
-        # Use the string matcher to find matches (same logic as manual search)
-        matches = self.string_matcher.find_matches(artist, title, candidate_files)
+        matches = []
         
-        # Additional filtering for artist+title searches - remove weak matches
-        if artist and title and len(matches) > 10:
-            # If we have many matches and both artist+title, filter out weaker ones
-            threshold_boost = 10  # Require 10 points higher for artist+title searches
-            filtered_matches = [m for m in matches if m.get('combined_score', 0) >= (self.string_matcher.threshold + threshold_boost)]
+        for file_metadata in candidate_files:
+            # Test against multiple fields (EXACT same as manual search)
+            artist = file_metadata.get('artist', '')
+            title = file_metadata.get('title', '')
+            album = file_metadata.get('album', '')
+            filename = file_metadata.get('filename', '')
             
-            if len(filtered_matches) > 0:
-                logger.debug(f"Artist+Title filtering: reduced {len(matches)} to {len(filtered_matches)} higher-quality matches")
-                matches = filtered_matches
+            # Calculate match scores for different fields (EXACT same logic)
+            artist_score = self.string_matcher.match_strings(query, artist) if artist else 0
+            title_score = self.string_matcher.match_strings(query, title) if title else 0
+            album_score = self.string_matcher.match_strings(query, album) if album else 0
+            filename_score = self.string_matcher.match_against_filename(query, filename) if filename else 0
+            
+            # Use highest score (EXACT same as manual search)
+            max_score = max(artist_score, title_score, album_score, filename_score)
+            
+            if max_score >= self.string_matcher.threshold:
+                # Create match result (same format as manual search)
+                match_result = {
+                    'file_path': file_metadata.get('file_path', ''),
+                    'artist': artist,
+                    'title': title,
+                    'filename': filename,
+                    'artist_score': artist_score,
+                    'title_score': title_score,
+                    'album_score': album_score,
+                    'filename_score': filename_score,
+                    'combined_score': max_score,
+                    'is_match': True
+                }
+                
+                # Add full metadata
+                match_result.update(file_metadata)
+                matches.append(match_result)
         
-        return matches
-
-    def _find_matches_for_pair_parallel(self, artist, title):
+        # Sort by combined score (descending) - same as manual search
+        matches.sort(key=lambda x: x['combined_score'], reverse=True)
+        
+        # Limit results (same as manual search)
+        limited_matches = matches[:50]  # Use same limit as manual search
+        
+        logger.debug(f"General query found {len(matches)} matches (showing top {len(limited_matches)})")
+        
+        return limited_matches
+    
+    def _extract_query_words(self, query):
         """
-        Thread-safe version of _find_matches_for_pair for parallel processing.
+        Extract meaningful words from query for pre-filtering.
         
         Args:
-            artist (str): Artist to match
-            title (str): Title to match
+            query (str): Search query
         
         Returns:
-            list: List of matches sorted by score
+            list: List of meaningful words
         """
-        try:
-            return self._find_matches_for_pair(artist, title, use_pre_filtering=True)
-        except Exception as e:
-            logger.error(f"Error in parallel worker for '{artist} - {title}': {str(e)}")
+        if not query:
             return []
+        
+        # Clean and extract words
+        cleaned = re.sub(r'[^\w\s]', ' ', query.lower())
+        words = cleaned.split()
+        
+        # Filter meaningful words
+        stop_words = {'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an', 'is', 'are', 'was', 'were'}
+        meaningful_words = [w for w in words if len(w) >= 3 and w not in stop_words]
+        
+        return meaningful_words
     
-    def process_match_file(self, file_path, show_progress=True, use_parallel=True):
+    def _find_matches_for_entry(self, parsed_info):
         """
-        Process a match file and find matches for each entry.
-        IMPROVED: Option to disable parallel processing for debugging.
+        Find matches for a single entry using proven strategies.
+        
+        Args:
+            parsed_info (dict): Parsed search information
+        
+        Returns:
+            list: List of matches
+        """
+        original_line = parsed_info['original_line']
+        artist = parsed_info['artist']
+        title = parsed_info['title']
+        
+        logger.debug(f"Processing: '{original_line}'")
+        
+        # STRATEGY 1: General query (PRIMARY - this is what works!)
+        # Use the exact same logic as successful manual search
+        matches = self._find_matches_general_query_exact(original_line)
+        
+        # If we got good matches, return them
+        if matches and matches[0].get('combined_score', 0) >= 90:
+            logger.debug(f"General query found excellent match ({matches[0]['combined_score']:.1f}%) for '{original_line}'")
+            return matches
+        
+        # STRATEGY 2: Try title-only if we have a clear title and general query was weak
+        if title and len(title) >= 4 and (not matches or matches[0].get('combined_score', 0) < 80):
+            logger.debug(f"Trying title-only search for: '{title}'")
+            title_matches = self._find_matches_general_query_exact(title)
+            
+            # If title search found better matches, use those
+            if title_matches and (not matches or 
+                title_matches[0].get('combined_score', 0) > matches[0].get('combined_score', 0)):
+                matches = title_matches
+        
+        # STRATEGY 3: Try clean version without remix info as last resort
+        if not matches or matches[0].get('combined_score', 0) < 75:
+            clean_line = self._remove_remix_info(original_line)
+            if clean_line != original_line and len(clean_line) >= 4:
+                logger.debug(f"Trying clean version: '{clean_line}'")
+                clean_matches = self._find_matches_general_query_exact(clean_line)
+                
+                # If clean version found better matches, use those
+                if clean_matches and (not matches or 
+                    clean_matches[0].get('combined_score', 0) > matches[0].get('combined_score', 0)):
+                    matches = clean_matches
+        
+        return matches or []
+    
+    def _remove_remix_info(self, text):
+        """Remove remix/version information from text."""
+        if not text:
+            return text
+        
+        # Common remix patterns to remove
+        remix_patterns = [
+            r'\s*-\s*[^-]*remix[^-]*$',
+            r'\s*-\s*[^-]*mix[^-]*$', 
+            r'\s*-\s*[^-]*edit[^-]*$',
+            r'\s*-\s*original[^-]*$',
+            r'\s*-\s*radio[^-]*$',
+            r'\s*\([^)]*remix[^)]*\)\s*$',
+            r'\s*\([^)]*mix[^)]*\)\s*$',
+        ]
+        
+        cleaned = text
+        for pattern in remix_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        return cleaned.strip()
+    
+    def process_match_file(self, file_path, show_progress=True, use_parallel=False):
+        """
+        Process a match file using general query approach.
         
         Args:
             file_path (str): Path to match file
             show_progress (bool): Whether to show progress bar
-            use_parallel (bool): Whether to use parallel processing
+            use_parallel (bool): Whether to use parallel processing (ignored)
         
         Returns:
-            list: List of results for each line containing line, artist, title, matches
+            list: List of results for each line
         """
-        # Load pairs from match file
-        pairs = self._load_match_file(file_path)
+        # Load entries from match file
+        entries = self._load_match_file(file_path)
         
-        if not pairs:
+        if not entries:
             logger.warning(f"No valid entries found in match file: {file_path}")
             return []
         
         # Get cache stats for logging
         cache_stats = self.cache_manager.get_cache_stats()
-        logger.info(f"Processing {len(pairs)} entries against {cache_stats['total_files']} indexed files")
+        logger.info(f"General query processing {len(entries)} entries against {cache_stats['total_files']} indexed files")
         
-        if use_parallel and len(pairs) > 5:  # Only use parallel for larger lists
-            return self._process_parallel(pairs, show_progress)
-        else:
-            return self._process_sequential(pairs, show_progress)
+        # Process sequentially (reliable and fast enough)
+        return self._process_sequential(entries, show_progress)
     
-    def _process_sequential(self, pairs, show_progress=True):
+    def _process_sequential(self, entries, show_progress=True):
         """
-        Process pairs sequentially (useful for debugging).
+        Process entries sequentially using general query approach.
         
         Args:
-            pairs (list): List of (line_num, line, artist, title) tuples
+            entries (list): List of (line_num, parsed_info) tuples
             show_progress (bool): Whether to show progress bar
         
         Returns:
@@ -234,31 +322,36 @@ class AutoSearch:
         results = []
         
         if show_progress:
-            progress_bar = tqdm(total=len(pairs), desc="Processing matches (sequential)", unit="entry")
+            progress_bar = tqdm(total=len(entries), desc="General query auto search", unit="entry")
         
-        for line_num, line, artist, title in pairs:
+        for line_num, parsed_info in entries:
             try:
-                matches = self._find_matches_for_pair(artist, title, use_pre_filtering=True)
+                # Use general query approach
+                matches = self._find_matches_for_entry(parsed_info)
                 
                 # Create result dictionary
                 results.append({
                     'line_num': line_num,
-                    'line': line,
-                    'artist': artist,
-                    'title': title,
+                    'line': parsed_info['original_line'],
+                    'artist': parsed_info['artist'],
+                    'title': parsed_info['title'],
                     'matches': matches
                 })
                 
-                logger.debug(f"Sequential: '{artist} - {title}' found {len(matches)} matches")
+                if matches:
+                    best_score = matches[0].get('combined_score', 0)
+                    logger.debug(f"'{parsed_info['original_line']}' -> {len(matches)} matches (best: {best_score:.1f}%)")
+                else:
+                    logger.debug(f"'{parsed_info['original_line']}' -> No matches")
                 
             except Exception as e:
-                logger.error(f"Error processing '{artist} - {title}': {str(e)}")
+                logger.error(f"Error processing '{parsed_info['original_line']}': {str(e)}")
                 # Add empty result for failed entries
                 results.append({
                     'line_num': line_num,
-                    'line': line,
-                    'artist': artist,
-                    'title': title,
+                    'line': parsed_info['original_line'],
+                    'artist': parsed_info['artist'],
+                    'title': parsed_info['title'],
                     'matches': []
                 })
             
@@ -268,99 +361,15 @@ class AutoSearch:
         if show_progress:
             progress_bar.close()
         
-        logger.info(f"Sequential processing completed for {len(results)} entries")
-        return results
-    
-    def _process_parallel(self, pairs, show_progress=True):
-        """
-        Process pairs using parallel processing.
-        
-        Args:
-            pairs (list): List of (line_num, line, artist, title) tuples
-            show_progress (bool): Whether to show progress bar
-        
-        Returns:
-            list: List of results
-        """
-        from concurrent.futures import ThreadPoolExecutor
-        import multiprocessing
-        
-        # Determine optimal number of worker threads
-        # Use fewer threads than cores to avoid overwhelming the database
-        max_workers = min(multiprocessing.cpu_count() // 2, len(pairs), 4)  # Max 4 threads
-        max_workers = max(1, max_workers)  # At least 1 thread
-        
-        logger.info(f"Using {max_workers} parallel workers for processing")
-        
-        results = []
-        
-        if show_progress:
-            progress_bar = tqdm(total=len(pairs), desc="Processing matches (parallel)", unit="entry")
-        
-        # Process entries in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_data = {}
-            for line_num, line, artist, title in pairs:
-                future = executor.submit(self._find_matches_for_pair_parallel, artist, title)
-                future_to_data[future] = (line_num, line, artist, title)
-            
-            # Collect results as they complete
-            from concurrent.futures import as_completed
-            for future in as_completed(future_to_data):
-                line_num, line, artist, title = future_to_data[future]
-                
-                try:
-                    matches = future.result()
-                    
-                    # Create result dictionary
-                    results.append({
-                        'line_num': line_num,
-                        'line': line,
-                        'artist': artist,
-                        'title': title,
-                        'matches': matches
-                    })
-                    
-                    logger.debug(f"Parallel: '{artist} - {title}' found {len(matches)} matches")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing '{artist} - {title}': {str(e)}")
-                    # Add empty result for failed entries
-                    results.append({
-                        'line_num': line_num,
-                        'line': line,
-                        'artist': artist,
-                        'title': title,
-                        'matches': []
-                    })
-                
-                if show_progress:
-                    progress_bar.update(1)
-        
-        if show_progress:
-            progress_bar.close()
-        
-        # Sort results by line number to maintain original order
-        results.sort(key=lambda x: x['line_num'])
-        
-        logger.info(f"Parallel processing completed for {len(results)} entries")
+        logger.info(f"General query processing completed for {len(results)} entries")
         return results
     
     def save_results(self, results, output_file):
-        """
-        Save search results to a file.
-        
-        Args:
-            results (list): List of search results
-            output_file (str): Path to output file
-        
-        Returns:
-            bool: True if results were saved successfully, False otherwise
-        """
+        """Save search results to a file."""
         try:
             with open(output_file, 'w', encoding='utf-8') as file:
-                file.write("# Automatic Search Results\n")
+                file.write("# General Query Auto Search Results\n")
+                file.write("# Uses same logic as successful manual 'general query' search\n")
                 file.write("# Format: Line Number, Original Line, Artist, Title, Match Count\n")
                 file.write("# Followed by matches (if any) with scores\n\n")
                 
@@ -397,65 +406,34 @@ class AutoSearch:
             return False
     
     def set_similarity_threshold(self, threshold):
-        """
-        Set the similarity threshold for fuzzy matching.
-        
-        Args:
-            threshold (int): New similarity threshold (0-100)
-        """
+        """Set the similarity threshold for fuzzy matching."""
         self.string_matcher.set_threshold(threshold)
     
-    def debug_search(self, artist, title, max_candidates=10):
+    def debug_search(self, query, max_candidates=10):
         """
         Debug search function to help diagnose search issues.
         
         Args:
-            artist (str): Artist to search for
-            title (str): Title to search for
+            query (str): Query to search for
             max_candidates (int): Maximum candidates to show in debug output
         
         Returns:
             dict: Debug information
         """
-        logger.info(f"=== DEBUG SEARCH for '{artist} - {title}' ===")
+        logger.info(f"=== DEBUG GENERAL QUERY SEARCH for '{query}' ===")
         
-        # Extract key words
-        artist_words = self.string_matcher.extract_key_words(artist) if artist else []
-        title_words = self.string_matcher.extract_key_words(title) if title else []
+        # Find matches using general query
+        matches = self._find_matches_general_query_exact(query)
         
-        logger.info(f"Extracted artist words: {artist_words}")
-        logger.info(f"Extracted title words: {title_words}")
-        
-        # Get candidates with pre-filtering
-        candidates = self.cache_manager.get_candidate_files(
-            artist_words=artist_words,
-            title_words=title_words,
-            limit=1000
-        )
-        
-        logger.info(f"Pre-filtering found {len(candidates)} candidates")
-        
-        # Show first few candidates
-        for i, candidate in enumerate(candidates[:max_candidates]):
-            logger.info(f"Candidate {i+1}: {candidate.get('filename', 'unknown')} "
-                       f"(artist: '{candidate.get('artist', '')}', title: '{candidate.get('title', '')}')")
-        
-        # Find matches
-        matches = self.string_matcher.find_matches(artist, title, candidates)
-        
-        logger.info(f"Fuzzy matching found {len(matches)} matches")
+        logger.info(f"General query found {len(matches)} matches")
         
         # Show match details
-        for i, match in enumerate(matches[:5]):  # Show top 5 matches
+        for i, match in enumerate(matches[:max_candidates]):
             logger.info(f"Match {i+1}: {match.get('filename', 'unknown')} "
                        f"(score: {match.get('combined_score', 0):.1f}%)")
         
         return {
-            'query_artist': artist,
-            'query_title': title,
-            'artist_words': artist_words,
-            'title_words': title_words,
-            'candidates_count': len(candidates),
+            'query': query,
             'matches_count': len(matches),
-            'top_matches': matches[:5]
+            'top_matches': matches[:max_candidates]
         }
