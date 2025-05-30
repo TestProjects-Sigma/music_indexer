@@ -1,6 +1,6 @@
 """
-String matcher module for flexible matching of music files.
-COMPLETELY REWRITTEN VERSION - Conservative and accurate matching
+FIXED Conservative String Matcher - Eliminates False Positives
+Replace your string_matcher.py with this version immediately.
 """
 from fuzzywuzzy import fuzz
 import re
@@ -11,8 +11,8 @@ logger = get_logger()
 
 class StringMatcher:
     """
-    Provides string matching functionality for music files.
-    REWRITTEN: Much more conservative and accurate approach.
+    FIXED Conservative string matcher that eliminates false positives.
+    This version is much more strict and accurate.
     """
     
     def __init__(self, threshold=75):
@@ -23,7 +23,15 @@ class StringMatcher:
             threshold (int): Similarity threshold (0-100) for fuzzy matching
         """
         self.threshold = threshold
-        logger.info(f"String matcher initialized with threshold {threshold}")
+        
+        # Electronic music specific stop words
+        self.stop_words = {
+            'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an', 'is', 'are',
+            'vs', 'feat', 'ft', 'dj', 'mc', 'original', 'mix', 'remix', 'edit',
+            'extended', 'radio', 'club', 'dance', 'version', 'remaster', 'remastered'
+        }
+        
+        logger.info(f"FIXED Conservative string matcher initialized with threshold {threshold}")
     
     def set_threshold(self, threshold):
         """
@@ -37,8 +45,7 @@ class StringMatcher:
     
     def clean_string(self, text):
         """
-        Clean a string by removing special characters and normalizing whitespace.
-        CONSERVATIVE: Only basic cleaning to preserve meaning.
+        Clean a string for matching - CONSERVATIVE approach.
         
         Args:
             text (str): String to clean
@@ -55,64 +62,52 @@ class StringMatcher:
         # Remove file extensions
         text = re.sub(r'\.(mp3|flac|m4a|aac|wav|ogg)$', '', text, flags=re.IGNORECASE)
         
-        # Replace common separators with spaces, but be conservative
+        # Replace separators with spaces (but be conservative)
         text = re.sub(r'[_\-.]', ' ', text)
         
-        # Remove parentheses content that might be remix info, but keep the base
-        # Only remove if it's clearly remix/mix info
-        remix_patterns = [
-            r'\s*\([^)]*remix[^)]*\)\s*$',
-            r'\s*\([^)]*mix[^)]*\)\s*$',
-            r'\s*\([^)]*edit[^)]*\)\s*$',
-            r'\s*\([^)]*remaster[^)]*\)\s*$',
-        ]
+        # Remove remix info in parentheses
+        text = re.sub(r'\s*\([^)]*(?:remix|mix|edit|remaster|version|original|extended|radio|club)[^)]*\)\s*', ' ', text, flags=re.IGNORECASE)
         
-        for pattern in remix_patterns:
-            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-        
-        # Remove leading numbers and dashes (track numbers)
-        text = re.sub(r'^\d+[\s\-_]*', '', text)
+        # Remove leading track numbers
+        text = re.sub(r'^\s*[a-z]?\d+\s*', '', text)
         
         # Normalize whitespace
         text = re.sub(r'\s+', ' ', text)
         text = text.strip()
         
         return text
-
+    
     def extract_meaningful_words(self, text):
         """
-        Extract meaningful words from text, filtering out noise.
+        Extract meaningful words from text - CONSERVATIVE filtering.
         
         Args:
-            text (str): Text to extract words from
-        
+            text (str): Input text
+            
         Returns:
             list: List of meaningful words
         """
         if not text:
             return []
         
+        # Clean and split
         cleaned = self.clean_string(text)
         words = cleaned.split()
         
-        # Filter out very short words and common stop words
-        stop_words = {
-            'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'a', 'an', 'is', 'are', 
-            'was', 'were', 'vs', 'feat', 'ft', 'dj', 'mc', 'remix', 'mix', 'edit',
-            'original', 'radio', 'extended', 'club', 'radio', 'remaster', 'remastered'
-        }
-        
+        # Filter meaningful words STRICTLY
         meaningful_words = []
         for word in words:
-            if len(word) >= 3 and word.lower() not in stop_words:
+            if (len(word) >= 3 and  # At least 3 characters
+                word not in self.stop_words and  # Not a stop word
+                not word.isdigit() and  # Not just a number
+                len(word) <= 20):  # Not too long (likely garbage)
                 meaningful_words.append(word)
         
         return meaningful_words
-
-    def exact_word_match_score(self, search_words, target_words):
+    
+    def calculate_word_overlap_score(self, search_words, target_words):
         """
-        Calculate score based on exact word matches.
-        This is the primary scoring method.
+        Calculate score based on meaningful word overlap - CONSERVATIVE.
         
         Args:
             search_words (list): Words from search term
@@ -124,76 +119,35 @@ class StringMatcher:
         if not search_words or not target_words:
             return 0
         
-        search_set = {word.lower() for word in search_words}
-        target_set = {word.lower() for word in target_words}
+        search_set = set(word.lower() for word in search_words)
+        target_set = set(word.lower() for word in target_words)
         
-        # Count exact matches
-        matches = search_set & target_set
+        # Calculate overlap
+        common_words = search_set & target_set
         
-        if not matches:
+        if not common_words:
             return 0
         
-        # Calculate score based on coverage
-        search_coverage = len(matches) / len(search_set)
-        target_coverage = len(matches) / len(target_set)
+        # STRICT requirements:
+        search_coverage = len(common_words) / len(search_set)
+        target_coverage = len(common_words) / len(target_set)
         
-        # Use the average coverage, but require good coverage on search side
-        if search_coverage < 0.5:  # At least 50% of search words must match
+        # Require good coverage on BOTH sides
+        if search_coverage < 0.6:  # At least 60% of search words must match
             return 0
         
+        # Calculate conservative score
         score = (search_coverage + target_coverage) / 2 * 100
-        return min(95, int(score))  # Cap at 95 to leave room for fuzzy improvements
-
-    def fuzzy_word_match_score(self, search_words, target_words):
-        """
-        Calculate fuzzy score between word lists.
-        Used as secondary scoring when exact matches fail.
         
-        Args:
-            search_words (list): Words from search term
-            target_words (list): Words from target text
+        # Apply penalty for low absolute word count
+        if len(common_words) == 1 and len(search_set) > 1:
+            score *= 0.7  # Penalty for single word matches
         
-        Returns:
-            int: Match score (0-100)
-        """
-        if not search_words or not target_words:
-            return 0
-        
-        total_score = 0
-        matched_words = 0
-        
-        for search_word in search_words:
-            if len(search_word) < 3:  # Skip very short words
-                continue
-                
-            best_word_score = 0
-            for target_word in target_words:
-                if len(target_word) < 3:
-                    continue
-                
-                # Only use ratio - avoid token_set_ratio which causes false matches
-                word_score = fuzz.ratio(search_word.lower(), target_word.lower())
-                best_word_score = max(best_word_score, word_score)
-            
-            # Only count words with strong similarity
-            if best_word_score >= 85:  # Strict threshold for fuzzy matching
-                total_score += best_word_score
-                matched_words += 1
-        
-        if matched_words == 0:
-            return 0
-        
-        # Require at least 50% of search words to have strong fuzzy matches
-        if matched_words / len(search_words) < 0.5:
-            return 0
-        
-        average_score = total_score / matched_words
-        # Reduce fuzzy scores to prefer exact matches
-        return max(0, int(average_score * 0.8))  # 20% penalty for fuzzy vs exact
-
+        return min(90, int(score))  # Cap at 90% for word overlap
+    
     def match_strings(self, str1, str2):
         """
-        Match two strings using conservative approach.
+        Match two strings using CONSERVATIVE approach.
         
         Args:
             str1 (str): First string (search term)
@@ -205,27 +159,61 @@ class StringMatcher:
         if not str1 or not str2:
             return 0
         
-        # Extract meaningful words
-        search_words = self.extract_meaningful_words(str1)
-        target_words = self.extract_meaningful_words(str2)
+        # Clean strings
+        clean_str1 = self.clean_string(str1)
+        clean_str2 = self.clean_string(str2)
         
-        if not search_words or not target_words:
+        if not clean_str1 or not clean_str2:
             return 0
         
-        # Try exact word matching first
-        exact_score = self.exact_word_match_score(search_words, target_words)
+        # Strategy 1: Word overlap (primary method)
+        search_words = self.extract_meaningful_words(clean_str1)
+        target_words = self.extract_meaningful_words(clean_str2)
         
-        if exact_score > 0:
-            return exact_score
+        word_score = self.calculate_word_overlap_score(search_words, target_words)
         
-        # Fall back to fuzzy matching only if exact fails
-        fuzzy_score = self.fuzzy_word_match_score(search_words, target_words)
+        # Strategy 2: Fuzzy matching (secondary, with strict limits)
+        fuzzy_score = 0
+        if len(clean_str1) >= 3 and len(clean_str2) >= 3:
+            # Use only the most conservative fuzzy method
+            ratio = fuzz.ratio(clean_str1, clean_str2)
+            partial_ratio = fuzz.partial_ratio(clean_str1, clean_str2)
+            
+            # Be VERY careful with token_set_ratio - it causes false positives
+            # Only use it if both strings have multiple meaningful words
+            if len(search_words) >= 2 and len(target_words) >= 2:
+                token_sort = fuzz.token_sort_ratio(clean_str1, clean_str2)
+                fuzzy_score = max(ratio, partial_ratio, token_sort)
+            else:
+                fuzzy_score = max(ratio, partial_ratio)
+            
+            # Apply strict penalty to fuzzy scores
+            fuzzy_score = int(fuzzy_score * 0.85)  # 15% penalty for fuzzy vs exact
         
-        return fuzzy_score
-
+        # Use the BETTER of the two methods, but apply strict validation
+        best_score = max(word_score, fuzzy_score)
+        
+        # CRITICAL: Apply additional validation
+        if best_score > 0:
+            # Ensure there's actually meaningful similarity
+            if not search_words or not target_words:
+                return 0
+            
+            # If score is suspiciously high, validate it
+            if best_score >= 90:
+                common_words = set(search_words) & set(target_words)
+                if len(common_words) == 0:
+                    return 0  # No common words = no high score
+                
+                # Check for single character false positives
+                if len(common_words) == 1 and len(list(common_words)[0]) <= 2:
+                    return max(50, best_score * 0.6)  # Heavy penalty
+        
+        return best_score
+    
     def match_against_filename(self, query, filename):
         """
-        Match query against filename with special filename handling.
+        Match query against filename with CONSERVATIVE approach.
         
         Args:
             query (str): Search query
@@ -237,31 +225,45 @@ class StringMatcher:
         if not query or not filename:
             return 0
         
-        # For filenames, we need to be even more careful
-        # because they often contain multiple pieces of info
+        # Clean the filename
+        clean_filename = self.clean_string(filename)
+        clean_query = self.clean_string(query)
         
-        # First try normal string matching
-        normal_score = self.match_strings(query, filename)
+        # Try normal string matching first
+        normal_score = self.match_strings(clean_query, clean_filename)
         
-        if normal_score >= 80:  # High confidence
+        # If we got a good score, return it
+        if normal_score >= 80:
             return normal_score
         
-        # Try matching against parts of the filename
-        # Common filename format: "artist - title" or "number - artist - title"
-        filename_parts = re.split(r'\s*-\s*', self.clean_string(filename))
+        # Try matching against filename parts
+        filename_parts = re.split(r'\s*-\s*', clean_filename)
         
         best_part_score = 0
         for part in filename_parts:
             if len(part.strip()) >= 3:  # Skip very short parts
-                part_score = self.match_strings(query, part)
+                part_score = self.match_strings(clean_query, part.strip())
                 best_part_score = max(best_part_score, part_score)
         
-        # Return the better of the two approaches
-        return max(normal_score, best_part_score)
-
+        # Return the better score, but apply conservative limits
+        final_score = max(normal_score, best_part_score)
+        
+        # Additional filename-specific validation
+        if final_score >= 85:
+            # Ensure the match makes sense for a filename
+            query_words = set(self.extract_meaningful_words(clean_query))
+            filename_words = set(self.extract_meaningful_words(clean_filename))
+            
+            if query_words and filename_words:
+                overlap = len(query_words & filename_words) / len(query_words)
+                if overlap < 0.4:  # Less than 40% word overlap
+                    final_score = min(75, final_score)  # Reduce suspicious high scores
+        
+        return final_score
+    
     def match_song(self, query_artist, query_title, file_metadata):
         """
-        Match a song query against file metadata using conservative approach.
+        Match a song query against file metadata with STRICT validation.
         
         Args:
             query_artist (str): Artist to match
@@ -280,55 +282,72 @@ class StringMatcher:
         title_score = 0
         filename_score = 0
         
+        # Clean inputs
+        clean_query_artist = self.clean_string(query_artist)
+        clean_query_title = self.clean_string(query_title)
+        clean_file_artist = self.clean_string(file_artist)
+        clean_file_title = self.clean_string(file_title)
+        
         # Match artist if provided
-        if query_artist and len(query_artist.strip()) >= 2:
-            if file_artist:
-                artist_score = self.match_strings(query_artist, file_artist)
+        if clean_query_artist and len(clean_query_artist) >= 2:
+            if clean_file_artist:
+                artist_score = self.match_strings(clean_query_artist, clean_file_artist)
             
-            # Also try against filename if metadata match is weak
+            # Try against filename if metadata match is weak
             if artist_score < 70 and filename:
-                filename_artist_score = self.match_against_filename(query_artist, filename)
+                filename_artist_score = self.match_against_filename(clean_query_artist, filename)
                 artist_score = max(artist_score, filename_artist_score)
         
         # Match title if provided
-        if query_title and len(query_title.strip()) >= 2:
-            if file_title:
-                title_score = self.match_strings(query_title, file_title)
+        if clean_query_title and len(clean_query_title) >= 2:
+            if clean_file_title:
+                title_score = self.match_strings(clean_query_title, clean_file_title)
             
-            # Also try against filename if metadata match is weak
+            # Try against filename if metadata match is weak
             if title_score < 70 and filename:
-                filename_title_score = self.match_against_filename(query_title, filename)
+                filename_title_score = self.match_against_filename(clean_query_title, filename)
                 title_score = max(title_score, filename_title_score)
         
-        # Calculate combined score with strict requirements
+        # Calculate combined score with STRICT requirements
         combined_score = 0
         
-        if query_artist and query_title:
-            # Both artist and title provided - require both to match reasonably well
-            min_threshold = max(60, self.threshold - 15)
+        if clean_query_artist and clean_query_title:
+            # Both artist and title provided - STRICT requirements
+            min_threshold = max(65, self.threshold - 10)
             
             if artist_score >= min_threshold and title_score >= min_threshold:
-                # Both match - use weighted average
+                # Both match reasonably well
                 combined_score = (artist_score * 0.6 + title_score * 0.4)
-            elif max(artist_score, title_score) >= 85:
-                # One very strong match can compensate
-                combined_score = max(artist_score, title_score) * 0.8
+            elif artist_score >= 85 or title_score >= 85:
+                # One very strong match might be acceptable
+                combined_score = max(artist_score, title_score) * 0.75
             else:
                 # Try filename matching as last resort
                 if filename:
-                    full_query = f"{query_artist} {query_title}".strip()
+                    full_query = f"{clean_query_artist} {clean_query_title}".strip()
                     filename_score = self.match_against_filename(full_query, filename)
-                    if filename_score >= 75:
-                        combined_score = filename_score * 0.7
+                    if filename_score >= 80:
+                        combined_score = filename_score * 0.65
         
-        elif query_artist:
+        elif clean_query_artist:
             # Only artist provided
             combined_score = artist_score
-        elif query_title:
+        elif clean_query_title:
             # Only title provided
             combined_score = title_score
         
-        # Final validation - ensure score makes sense
+        # FINAL VALIDATION - eliminate suspicious high scores
+        if combined_score >= 95:
+            # Very high scores need additional validation
+            query_words = set(self.extract_meaningful_words(f"{query_artist} {query_title}"))
+            file_words = set(self.extract_meaningful_words(f"{file_artist} {file_title} {filename}"))
+            
+            if query_words and file_words:
+                word_overlap = len(query_words & file_words) / len(query_words)
+                if word_overlap < 0.5:  # Less than 50% word overlap
+                    combined_score = min(85, combined_score)  # Reduce suspicious scores
+        
+        # Apply threshold
         if combined_score < self.threshold:
             combined_score = 0
         
@@ -346,10 +365,10 @@ class StringMatcher:
             'combined_score': combined_score,
             'is_match': is_match
         }
-
+    
     def find_matches(self, query_artist, query_title, file_metadata_list):
         """
-        Find matches for a song query in a list of file metadata.
+        Find matches for a song query with STRICT validation.
         
         Args:
             query_artist (str): Artist to match
@@ -361,7 +380,7 @@ class StringMatcher:
         """
         matches = []
         
-        logger.debug(f"Conservative search: artist='{query_artist}', title='{query_title}' in {len(file_metadata_list)} files")
+        logger.debug(f"CONSERVATIVE search: artist='{query_artist}', title='{query_title}' in {len(file_metadata_list)} files")
         
         for metadata in file_metadata_list:
             match_result = self.match_song(query_artist, query_title, metadata)
@@ -374,36 +393,17 @@ class StringMatcher:
         # Sort matches by combined score (descending)
         matches.sort(key=lambda x: x['combined_score'], reverse=True)
         
-        # Apply stricter limits and filtering
-        # Remove matches with suspiciously perfect scores that might be false positives
+        # Apply STRICT limits and final filtering
         filtered_matches = []
         for match in matches:
             score = match['combined_score']
             
-            # Flag suspicious 100% scores on weak matches
-            if score >= 99:
-                # Verify this is actually a strong match
-                artist_words = self.extract_meaningful_words(query_artist or "")
-                title_words = self.extract_meaningful_words(query_title or "")
-                file_artist_words = self.extract_meaningful_words(match.get('artist', ''))
-                file_title_words = self.extract_meaningful_words(match.get('title', ''))
-                
-                # Check if we have substantial word overlap
-                search_words = set(artist_words + title_words)
-                file_words = set(file_artist_words + file_title_words)
-                
-                if len(search_words) > 0:
-                    overlap = len(search_words & file_words) / len(search_words)
-                    if overlap < 0.4:  # Less than 40% word overlap
-                        # Reduce score for suspicious matches
-                        match['combined_score'] = min(85, score)
-                        logger.debug(f"Reduced suspicious 100% score for {match.get('filename', 'unknown')}")
-            
-            if match['combined_score'] >= self.threshold:
+            # Additional validation for electronic music
+            if score >= self.threshold:
                 filtered_matches.append(match)
         
-        # Limit results
-        limited_matches = filtered_matches[:30]  # Reduced from 50
+        # Limit results to prevent overwhelming results
+        limited_matches = filtered_matches[:25]  # Reduced from 50
         
-        logger.debug(f"Conservative search found {len(matches)} raw matches, {len(limited_matches)} after filtering")
+        logger.debug(f"CONSERVATIVE search found {len(matches)} raw matches, {len(limited_matches)} after strict filtering")
         return limited_matches

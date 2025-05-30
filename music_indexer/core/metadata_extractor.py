@@ -1,5 +1,6 @@
 """
-Metadata extractor for audio files using mutagen library.
+Fixed metadata extractor for electronic music collections.
+Replace your existing metadata_extractor.py with this version.
 """
 import os
 import re
@@ -14,7 +15,7 @@ logger = get_logger()
 
 
 class MetadataExtractor:
-    """Extracts metadata from audio files."""
+    """Extracts metadata from audio files with electronic music optimizations."""
     
     def __init__(self):
         """Initialize the metadata extractor."""
@@ -22,10 +23,16 @@ class MetadataExtractor:
             "mp3": self._extract_mp3_metadata,
             "flac": self._extract_flac_metadata,
             "m4a": self._extract_m4a_metadata,
-            "aac": self._extract_m4a_metadata,  # AAC often uses same container as M4A
+            "aac": self._extract_m4a_metadata,
             "wav": self._extract_wav_metadata
         }
-        logger.info("Metadata extractor initialized")
+        
+        # Electronic music labels from your collection
+        self.known_labels = {
+            'dps', 'trt', 'pms', 'sq', 'doc', 'vmc', 'dwm', 'apc', 'rfl', 'mim'
+        }
+        
+        logger.info("Electronic music metadata extractor initialized")
     
     def _get_file_extension(self, file_path):
         """Get the file extension."""
@@ -33,68 +40,68 @@ class MetadataExtractor:
     
     def _parse_filename(self, filename):
         """
-        Parse artist and title from filename based on various formats.
+        Parse artist and title from filename - FIXED VERSION.
+        Handles all problematic patterns from your electronic music collection.
         
-        Supported formats:
-        - "Artist - Song"
-        - "Artist_-_Song"
-        - "Artist_Song"
-        - "01 - Artist - Song"
-        - "01_-_Artist_-_Song"
-        - "Song - Artist"
-        - "Song_-_Artist"
-        - "Song_Artist"
-        - "01 - Song - Artist"
-        - "01_-_Song_-_Artist"
-        
+        Args:
+            filename (str): Original filename
+            
         Returns:
-            tuple: (artist, title) or (None, None) if pattern not recognized
+            tuple: (artist, title) properly parsed
         """
         # Remove file extension
         base_name = os.path.splitext(os.path.basename(filename))[0]
         
-        # Define patterns with named groups
-        patterns = [
-            # "Artist - Song" format
-            r'^(?P<artist>.+?)\s*-\s*(?P<title>.+)$',
-            
-            # "Artist_-_Song" format
-            r'^(?P<artist>.+?)_-_(?P<title>.+)$',
-            
-            # "Artist_Song" format
-            r'^(?P<artist>.+?)_(?P<title>.+)$',
-            
-            # "01 - Artist - Song" format
-            r'^(?:\d+)\s*-\s*(?P<artist>.+?)\s*-\s*(?P<title>.+)$',
-            
-            # "01_-_Artist_-_Song" format
-            r'^(?:\d+)_-_(?P<artist>.+?)_-_(?P<title>.+)$',
-            
-            # "Song - Artist" format (reversed)
-            r'^(?P<title>.+?)\s*-\s*(?P<artist>.+)$',
-            
-            # "Song_-_Artist" format (reversed)
-            r'^(?P<title>.+?)_-_(?P<artist>.+)$',
-            
-            # "Song_Artist" format (reversed)
-            r'^(?P<title>.+?)_(?P<artist>.+)$',
-            
-            # "01 - Song - Artist" format (reversed)
-            r'^(?:\d+)\s*-\s*(?P<title>.+?)\s*-\s*(?P<artist>.+)$',
-            
-            # "01_-_Song_-_Artist" format (reversed)
-            r'^(?:\d+)_-_(?P<title>.+?)_-_(?P<artist>.+)$'
+        # CRITICAL FIX 1: Remove track numbers and vinyl positions FIRST
+        # Patterns: 01-, 02-, a1_, b2_, 101-, etc.
+        track_patterns = [
+            r'^[a-z]?\d+[-_]\s*',  # a1-, 01-, 101-, a1_, etc.
+            r'^\d+\s*[-_]\s*',     # Just numbers: 01-, 02-
         ]
         
-        for pattern in patterns:
-            match = re.match(pattern, base_name)
-            if match:
-                artist = match.group('artist').strip()
-                title = match.group('title').strip()
-                return artist, title
+        for pattern in track_patterns:
+            base_name = re.sub(pattern, '', base_name, flags=re.IGNORECASE)
         
-        # If no pattern matches, return filename as title
-        return None, base_name
+        # CRITICAL FIX 2: Handle the _-_ pattern (74% of your files)
+        # Pattern: artist_-_title-label
+        underscore_dash_pattern = r'^(.+?)_-_(.+?)(?:-([a-z]{2,4}))?$'
+        underscore_dash_match = re.match(underscore_dash_pattern, base_name, re.IGNORECASE)
+        if underscore_dash_match:
+            raw_artist = underscore_dash_match.group(1)
+            raw_title = underscore_dash_match.group(2)
+            
+            # Clean up the artist (remove trailing underscores)
+            artist = re.sub(r'_+$', '', raw_artist).replace('_', ' ').strip()
+            
+            # Clean up the title (remove leading underscores)
+            title = re.sub(r'^_+', '', raw_title).replace('_', ' ').strip()
+            
+            return artist, title
+        
+        # CRITICAL FIX 3: Handle standard dash separation
+        # Pattern: artist-title-label
+        dash_parts = base_name.split('-')
+        if len(dash_parts) >= 2:
+            artist = dash_parts[0].replace('_', ' ').strip()
+            
+            # Handle label at the end
+            if len(dash_parts) > 2 and dash_parts[-1].lower() in self.known_labels:
+                title = '-'.join(dash_parts[1:-1]).replace('_', ' ').strip()
+            else:
+                title = '-'.join(dash_parts[1:]).replace('_', ' ').strip()
+            
+            return artist, title
+        
+        # CRITICAL FIX 4: Handle underscore separation (without _-_)
+        if '_' in base_name and '_-_' not in base_name:
+            parts = base_name.split('_', 1)  # Split only on first underscore
+            artist = parts[0].strip()
+            title = parts[1].replace('_', ' ').strip() if len(parts) > 1 else ''
+            
+            return artist, title
+        
+        # Fallback - treat as title only
+        return None, base_name.replace('_', ' ').strip()
     
     def _extract_mp3_metadata(self, file_path):
         """Extract metadata from MP3 file."""
@@ -103,22 +110,21 @@ class MetadataExtractor:
             metadata = {
                 'format': 'mp3',
                 'duration': audio.info.length,
-                'bitrate': audio.info.bitrate // 1000,  # Convert to kbps
+                'bitrate': audio.info.bitrate // 1000,
                 'sample_rate': audio.info.sample_rate,
                 'channels': getattr(audio.info, 'channels', None)
             }
             
-            # Get ID3 tags if available
             if audio.tags:
-                if 'TPE1' in audio.tags:  # Artist
+                if 'TPE1' in audio.tags:
                     metadata['artist'] = str(audio.tags['TPE1'])
-                if 'TIT2' in audio.tags:  # Title
+                if 'TIT2' in audio.tags:
                     metadata['title'] = str(audio.tags['TIT2'])
-                if 'TALB' in audio.tags:  # Album
+                if 'TALB' in audio.tags:
                     metadata['album'] = str(audio.tags['TALB'])
-                if 'TDRC' in audio.tags:  # Year
+                if 'TDRC' in audio.tags:
                     metadata['year'] = str(audio.tags['TDRC'])
-                if 'TCON' in audio.tags:  # Genre
+                if 'TCON' in audio.tags:
                     metadata['genre'] = str(audio.tags['TCON'])
             
             return metadata
@@ -134,13 +140,12 @@ class MetadataExtractor:
             metadata = {
                 'format': 'flac',
                 'duration': audio.info.length,
-                'bitrate': getattr(audio.info, 'bitrate', 0) // 1000,  # Convert to kbps
+                'bitrate': getattr(audio.info, 'bitrate', 0) // 1000,
                 'sample_rate': audio.info.sample_rate,
                 'channels': audio.info.channels,
                 'bits_per_sample': audio.info.bits_per_sample
             }
             
-            # Get Vorbis comments
             if audio:
                 if 'artist' in audio:
                     metadata['artist'] = audio['artist'][0]
@@ -166,22 +171,21 @@ class MetadataExtractor:
             metadata = {
                 'format': 'm4a' if file_path.lower().endswith('.m4a') else 'aac',
                 'duration': audio.info.length,
-                'bitrate': audio.info.bitrate // 1000,  # Convert to kbps
+                'bitrate': audio.info.bitrate // 1000,
                 'sample_rate': audio.info.sample_rate,
                 'channels': getattr(audio.info, 'channels', None)
             }
             
-            # Get iTunes metadata
             if audio.tags:
-                if '\xa9ART' in audio.tags:  # Artist
+                if '\xa9ART' in audio.tags:
                     metadata['artist'] = audio.tags['\xa9ART'][0]
-                if '\xa9nam' in audio.tags:  # Title
+                if '\xa9nam' in audio.tags:
                     metadata['title'] = audio.tags['\xa9nam'][0]
-                if '\xa9alb' in audio.tags:  # Album
+                if '\xa9alb' in audio.tags:
                     metadata['album'] = audio.tags['\xa9alb'][0]
-                if '\xa9day' in audio.tags:  # Year
+                if '\xa9day' in audio.tags:
                     metadata['year'] = audio.tags['\xa9day'][0]
-                if '\xa9gen' in audio.tags:  # Genre
+                if '\xa9gen' in audio.tags:
                     metadata['genre'] = audio.tags['\xa9gen'][0]
             
             return metadata
@@ -197,12 +201,11 @@ class MetadataExtractor:
             metadata = {
                 'format': 'wav',
                 'duration': audio.info.length,
-                'bitrate': getattr(audio.info, 'bitrate', 0) // 1000,  # Convert to kbps
+                'bitrate': getattr(audio.info, 'bitrate', 0) // 1000,
                 'sample_rate': audio.info.sample_rate,
                 'channels': audio.info.channels
             }
             
-            # WAV has limited metadata support
             return metadata
         
         except Exception as e:
@@ -211,7 +214,7 @@ class MetadataExtractor:
     
     def extract_metadata(self, file_path):
         """
-        Extract metadata from audio file.
+        Extract metadata from audio file - FIXED VERSION.
         
         Args:
             file_path (str): Path to audio file
@@ -238,21 +241,46 @@ class MetadataExtractor:
             metadata['filename'] = filename
             metadata['file_path'] = file_path
             
-            # Try to parse artist/title from filename if not in metadata
-            if 'artist' not in metadata or 'title' not in metadata:
-                artist, title = self._parse_filename(filename)
-                
-                if 'artist' not in metadata and artist:
-                    metadata['artist'] = artist
-                    metadata['artist_from_filename'] = True
-                
-                if 'title' not in metadata and title:
-                    metadata['title'] = title
-                    metadata['title_from_filename'] = True
+            # Get metadata fields
+            audio_artist = metadata.get('artist', '').strip()
+            audio_title = metadata.get('title', '').strip()
+            
+            # Parse filename using FIXED parser
+            filename_artist, filename_title = self._parse_filename(filename)
+            
+            # CRITICAL FIX: Use proper logic to choose best metadata
+            # Check if audio metadata is valid (not just track numbers)
+            audio_artist_valid = (audio_artist and 
+                                len(audio_artist) > 2 and 
+                                not audio_artist.isdigit() and
+                                not re.match(r'^[a-z]?\d+$', audio_artist.lower()))
+            
+            audio_title_valid = (audio_title and len(audio_title) > 2)
+            
+            # Choose best artist
+            if audio_artist_valid:
+                metadata['artist'] = audio_artist
+                metadata['artist_from_filename'] = False
+            elif filename_artist and len(filename_artist) > 1:
+                metadata['artist'] = filename_artist
+                metadata['artist_from_filename'] = True
+            else:
+                metadata['artist'] = filename_artist or audio_artist
+                metadata['artist_from_filename'] = True
+            
+            # Choose best title
+            if audio_title_valid:
+                metadata['title'] = audio_title
+                metadata['title_from_filename'] = False
+            elif filename_title and len(filename_title) > 1:
+                metadata['title'] = filename_title
+                metadata['title_from_filename'] = True
+            else:
+                metadata['title'] = filename_title or audio_title
+                metadata['title_from_filename'] = True
         
         return metadata
-
-        # Add a new method to the MetadataExtractor class that skips audio analysis
+    
     def extract_basic_metadata(self, file_path):
         """
         Extract only basic metadata from a file without audio analysis.
@@ -280,16 +308,14 @@ class MetadataExtractor:
                 'filename': filename,
                 'format': ext,
                 'file_size': file_size,
-                # Set default values for audio-specific fields
                 'duration': 0,
                 'bitrate': 0,
                 'sample_rate': 0,
                 'channels': 0,
-                # Add a flag to indicate this is basic metadata only
                 'basic_metadata_only': True
             }
             
-            # Try to parse artist/title from filename
+            # Parse filename using FIXED parser
             artist, title = self._parse_filename(filename)
             
             if artist:
@@ -324,7 +350,6 @@ class MetadataExtractor:
         import multiprocessing
         
         if max_workers is None:
-            # Use fewer workers for metadata extraction since it's I/O intensive
             max_workers = min(multiprocessing.cpu_count(), 6)
         
         logger.info(f"Starting parallel metadata extraction with {max_workers} workers")
@@ -373,7 +398,10 @@ class MetadataExtractor:
             dict: Metadata dictionary or None if failed
         """
         try:
-            return self.extract_metadata(file_path, extract_audio_metadata)
+            if extract_audio_metadata:
+                return self.extract_metadata(file_path)
+            else:
+                return self.extract_basic_metadata(file_path)
         except Exception as e:
             logger.error(f"Error extracting metadata from {file_path}: {str(e)}")
             return None

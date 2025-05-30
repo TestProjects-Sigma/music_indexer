@@ -13,6 +13,7 @@ from .search.string_matcher import StringMatcher
 from .utils.config_manager import ConfigManager
 from .utils.logger import get_logger
 from .utils.smart_auto_selector import SmartAutoSelector
+from .utils.enhanced_indexing import integrate_enhanced_indexing
 
 logger = get_logger()
 
@@ -33,13 +34,18 @@ class MusicIndexer:
         self.manual_search = ManualSearch(self.cache_manager, self.string_matcher)
         self.auto_search = AutoSearch(self.cache_manager, self.string_matcher)
         self.smart_auto_selector = SmartAutoSelector()
+        self.indexing_in_progress = False
+        self.search_in_progress = False
+        self.current_search_results = []
         
         # Initialize state
         self.indexing_in_progress = False
         self.search_in_progress = False
         self.current_search_results = []
         
-        logger.info("Music Indexer application initialized")
+        integrate_enhanced_indexing(self)
+    
+        logger.info("Music Indexer application initialized with electronic music optimizations")
     
     def get_music_directories(self):
         """
@@ -561,3 +567,51 @@ class IndexingWorker(QRunnable):
             import traceback
             logger.error(traceback.format_exc())
             self.signals.finished.emit(False)
+
+    def _needs_metadata_fix(self, cached_file):
+        """Check if a cached file needs metadata fixing for electronic music."""
+        artist = cached_file.get('artist', '').strip()
+        title = cached_file.get('title', '').strip()
+        filename = cached_file.get('filename', '')
+        
+        # Check for track number artists (critical issue)
+        if artist and (artist.isdigit() or 
+                       len(artist) <= 3 and artist.lower() in ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10',
+                                                                'a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2']):
+            return True
+        
+        # Check for underscore problems
+        if artist and ('_' in artist or artist.endswith('_')):
+            return True
+        
+        if title and (title.startswith('_') or '_' in title):
+            return True
+        
+        # Check if filename suggests better parsing is possible
+        if filename and ('_-_' in filename or filename.startswith(('01-', '02-', 'a1_', 'b2_'))):
+            if not artist or len(artist) <= 3:
+                return True
+        
+        return False
+
+    def _validate_metadata_quality(self, metadata):
+        """Validate metadata quality for electronic music."""
+        artist = metadata.get('artist', '').strip()
+        title = metadata.get('title', '').strip()
+        
+        # Basic validation
+        if not artist or not title:
+            return len(title) > 2
+        
+        # Check artist quality
+        if artist.isdigit() or len(artist) <= 1:
+            return False
+        
+        # Check for track number artists
+        if artist.lower() in ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10',
+                              'a1', 'a2', 'a3', 'b1', 'b2', 'b3']:
+            return False
+        
+        # Check title quality
+        if len(title) <= 1 or title.startswith('_'):
+            return False
