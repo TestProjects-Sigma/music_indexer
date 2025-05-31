@@ -360,7 +360,7 @@ class SearchPanel(QWidget):
                     if self.use_enhanced:
                         # Use optimized matcher
                         from ..search.optimized_matcher import OptimizedMatcher
-                        matcher = OptimizedMatcher(self.music_indexer.cache_manager)
+                        matcher = OptimizedMatcher(self.music_indexer.cache_manager, self.music_indexer.config_manager)
                         results = matcher.process_match_file(self.match_file, show_progress=False)
                     else:
                         # Use standard auto search

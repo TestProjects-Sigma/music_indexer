@@ -22,6 +22,8 @@ DEFAULT_CONFIG = {
     },
     "search": {
         "similarity_threshold": 75,  # Default threshold for fuzzy matching (0-100)
+        # NEW: Configurable suffix removal
+        "ignore_suffixes": ["justify", "sob", "nrg", "dps", "trt", "pms"],
     },
 }
 

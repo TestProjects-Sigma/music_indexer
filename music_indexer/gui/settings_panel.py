@@ -78,7 +78,32 @@ class SettingsPanel(QWidget):
         # Create search settings group
         search_group = QGroupBox("Search Settings")
         search_layout = QFormLayout(search_group)
+
+        # Create suffix removal settings group
+        suffix_group = QGroupBox("Advanced Search Settings")
+        suffix_layout = QVBoxLayout(suffix_group)
         
+        # Suffix removal configuration
+        suffix_label = QLabel("Ignore Suffixes (comma-separated):")
+        suffix_label.setToolTip("File suffixes to ignore when matching (e.g. justify, sob, nrg)")
+        suffix_layout.addWidget(suffix_label)
+        
+        self.ignore_suffixes_input = QLineEdit()
+        self.ignore_suffixes_input.setPlaceholderText("justify, sob, nrg, dps, trt, pms")
+        self.ignore_suffixes_input.setToolTip(
+            "Enter comma-separated suffixes to ignore during matching.\n"
+            "Example: 'justify, sob, nrg' will make 'track-justify' match 'track'"
+        )
+        suffix_layout.addWidget(self.ignore_suffixes_input)
+        
+        # Info label
+        suffix_info = QLabel("These suffixes will be removed from titles during matching to improve accuracy.")
+        suffix_info.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
+        suffix_info.setWordWrap(True)
+        suffix_layout.addWidget(suffix_info)
+        
+        main_layout.addWidget(suffix_group)
+
         # Similarity threshold slider
         threshold_layout = QHBoxLayout()
         
@@ -393,6 +418,11 @@ class SettingsPanel(QWidget):
         
         tolerance = settings.value("auto_select/score_tolerance", 5, type=int)
         self.score_tolerance_spin.setValue(tolerance)
+        
+        # Load ignore suffixes
+        ignore_suffixes = self.music_indexer.config_manager.get("search", "ignore_suffixes", 
+                                                              ["justify", "sob", "nrg", "dps", "trt", "pms"])
+        self.ignore_suffixes_input.setText(", ".join(ignore_suffixes))
     
     def save_settings(self):
         """Save panel settings."""
@@ -426,6 +456,14 @@ class SettingsPanel(QWidget):
         settings.setValue("auto_select/format_preferences", self.get_format_preferences())
         settings.setValue("auto_select/prefer_higher_bitrate", self.prefer_higher_bitrate.isChecked())
         settings.setValue("auto_select/score_tolerance", self.score_tolerance_spin.value())
+        
+        # Save ignore suffixes
+        suffixes_text = self.ignore_suffixes_input.text().strip()
+        if suffixes_text:
+            suffixes_list = [s.strip() for s in suffixes_text.split(',') if s.strip()]
+            self.music_indexer.config_manager.set("search", "ignore_suffixes", suffixes_list)
+        else:
+            self.music_indexer.config_manager.set("search", "ignore_suffixes", [])        
         
         QMessageBox.information(
             self,

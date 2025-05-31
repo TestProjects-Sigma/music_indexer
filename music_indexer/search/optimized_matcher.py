@@ -14,42 +14,55 @@ logger = get_logger()
 
 
 class OptimizedMatcher:
-    """Complete fixed optimized matcher with proper remix and artist logic."""
+    """Complete fixed optimized matcher with configurable suffix removal."""
     
-    def __init__(self, cache_manager):
+    def __init__(self, cache_manager, config_manager=None):
         """
         Initialize the optimized matcher.
         
         Args:
             cache_manager: CacheManager instance from the main application
+            config_manager: ConfigManager instance for settings (optional)
         """
         self.cache_manager = cache_manager
+        self.config_manager = config_manager
         self.min_score = 80
+        
+        # Load configurable ignore suffixes
+        if config_manager:
+            self.ignore_suffixes = config_manager.get("search", "ignore_suffixes", 
+                                                    ["justify", "sob", "nrg", "dps", "trt", "pms"])
+        else:
+            # Fallback to default list
+            self.ignore_suffixes = ["justify", "sob", "nrg", "dps", "trt", "pms"]
         
         # Electronic music labels from your collection
         self.known_labels = {
             'dps', 'trt', 'pms', 'sq', 'doc', 'vmc', 'dwm', 'apc', 'rfl', 'mim'
         }
         
-        logger.info("Complete fixed optimized matcher for electronic music initialized")
+        logger.info(f"Current ignore suffixes: {self.ignore_suffixes}")
+        logger.info(f"Optimized matcher initialized with ignore suffixes: {self.ignore_suffixes}")
         
     def clean_text_for_matching(self, text):
-            """Clean text for accurate matching with justify suffix removal."""
-            if not text:
-                return ""
-            
-            text = text.lower()
-            text = re.sub(r'\s*\([^)]*(?:remix|mix|edit|version|remaster)\)', '', text)
-            text = re.sub(r'\s*-\s*[^-]*(?:remix|mix|edit|version|remaster)[^-]*$', '', text)
-            
-            # NEW: Remove common electronic music suffixes
-            text = re.sub(r'[-_]\s*justify\s*$', '', text, flags=re.IGNORECASE)
-            text = re.sub(r'[-_]\s*sob\s*$', '', text, flags=re.IGNORECASE)  # Also handles "sob" label
-            text = re.sub(r'[-_]\s*nrg\s*$', '', text, flags=re.IGNORECASE)  # Also handles "nrg" label
-            
-            text = re.sub(r'[^\w\s]', ' ', text)
-            text = re.sub(r'\s+', ' ', text)
-            return text.strip()
+        """Clean text for accurate matching with configurable suffix removal."""
+
+        if not text:
+            return ""
+        
+        text = text.lower()
+        text = re.sub(r'\s*\([^)]*(?:remix|mix|edit|version|remaster)\)', '', text)
+        text = re.sub(r'\s*-\s*[^-]*(?:remix|mix|edit|version|remaster)[^-]*$', '', text)
+        
+        # CONFIGURABLE: Remove user-defined suffixes
+        for suffix in self.ignore_suffixes:
+            if suffix.strip():  # Skip empty suffixes
+                pattern = rf'[-_]\s*{re.escape(suffix)}\s*$'
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        text = re.sub(r'[^\w\s]', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
     
     def parse_playlist_entry(self, line):
         """Parse playlist entry with improved remix detection."""
@@ -543,11 +556,20 @@ class OptimizedMatcher:
         
         logger.debug(f"Improved search found {len(matches)} matches (showing top {len(top_matches)})")
         for i, match in enumerate(top_matches, 1):
-            remix_indicator = "🎵" if self.file_appears_to_be_remix(match['filename'], match['title']) else "🎶"
-            logger.debug(f"  {i}. {remix_indicator} {match['filename']} - Score: {match['match_score']:.1f}% ({match['strategy']})")
+            remix_indicator = "[R]" if self.file_appears_to_be_remix(match['filename'], match['title']) else "[O]"
+        #    remix_indicator = self.get_remix_indicator(match['filename'], match['title'])   
+        logger.debug(f"  {i}. {match['filename']} - Score: {match['match_score']:.1f}% ({match['strategy']})")
         
         return top_matches
-    
+
+# alternative remix indicator
+#    def get_remix_indicator(self, filename, title):
+#        """Get remix indicator safe for Windows console."""
+#        if self.file_appears_to_be_remix(filename, title):
+#            return "[REMIX]"
+#        else:
+#            return "[ORIG] "
+
     def process_match_file(self, file_path, show_progress=True):
         """Process a match file using the complete fixed optimized matcher."""
         if not os.path.exists(file_path):
