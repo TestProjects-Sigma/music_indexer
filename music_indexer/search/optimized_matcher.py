@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Complete Fixed Optimized Matcher - All fixes in one file
-Addresses remix vs original preference and artist matching issues
+FIXED Optimized Matcher - Corrected UnboundLocalError
+Fixed the variable 'i' scope issue in debug logging
 """
 
 import os
@@ -555,21 +555,14 @@ class OptimizedMatcher:
         top_matches = matches[:10]
         
         logger.debug(f"Improved search found {len(matches)} matches (showing top {len(top_matches)})")
+        
+        # FIXED: Use enumerate to properly define 'i' variable for debug logging
         for i, match in enumerate(top_matches, 1):
             remix_indicator = "[R]" if self.file_appears_to_be_remix(match['filename'], match['title']) else "[O]"
-        #    remix_indicator = self.get_remix_indicator(match['filename'], match['title'])   
-        logger.debug(f"  {i}. {match['filename']} - Score: {match['match_score']:.1f}% ({match['strategy']})")
+            logger.debug(f"  {i}. {match['filename']} - Score: {match['match_score']:.1f}% ({match['strategy']})")
         
         return top_matches
-
-# alternative remix indicator
-#    def get_remix_indicator(self, filename, title):
-#        """Get remix indicator safe for Windows console."""
-#        if self.file_appears_to_be_remix(filename, title):
-#            return "[REMIX]"
-#        else:
-#            return "[ORIG] "
-
+    
     def process_match_file(self, file_path, show_progress=True):
         """Process a match file using the complete fixed optimized matcher."""
         if not os.path.exists(file_path):
