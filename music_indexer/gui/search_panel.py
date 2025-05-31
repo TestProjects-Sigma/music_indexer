@@ -1,5 +1,5 @@
 """
-Search panel GUI for the music indexer application.
+Enhanced search panel GUI with optimized matcher option for the music indexer application.
 """
 import os
 import logging
@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QGroupBox, QRadioButton, QFileDialog,
     QComboBox, QSlider, QCheckBox, QMessageBox, QProgressDialog,
-    QFrame
+    QFrame, QButtonGroup
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 
@@ -18,13 +18,13 @@ from .log_console import LogConsole
 
 
 class SearchPanel(QWidget):
-    """Search panel for the Music Indexer application."""
+    """Enhanced search panel with optimized matcher option for the Music Indexer application."""
     
     # Custom signals
     search_completed = pyqtSignal(list)
     
     def __init__(self, music_indexer):
-        """Initialize the search panel."""
+        """Initialize the enhanced search panel."""
         super().__init__()
         
         self.music_indexer = music_indexer
@@ -35,7 +35,7 @@ class SearchPanel(QWidget):
         # Load settings
         self.load_settings()
         
-        logger.info("Search panel initialized")
+        logger.info("Enhanced search panel with optimized matcher initialized")
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -54,8 +54,17 @@ class SearchPanel(QWidget):
         self.auto_search_radio = QRadioButton("Automatic Search (from file)")
         self.auto_search_radio.toggled.connect(self.toggle_search_mode)
         
+        # NEW: Enhanced auto search option
+        self.enhanced_auto_search_radio = QRadioButton("Enhanced Auto Search (optimized for electronic music)")
+        self.enhanced_auto_search_radio.toggled.connect(self.toggle_search_mode)
+        self.enhanced_auto_search_radio.setToolTip(
+            "Uses optimized matching algorithm specifically designed for electronic music.\n"
+            "Better handling of remix information, multi-artist tracks, and format preferences."
+        )
+        
         search_mode_layout.addWidget(self.manual_search_radio)
         search_mode_layout.addWidget(self.auto_search_radio)
+        search_mode_layout.addWidget(self.enhanced_auto_search_radio)
         
         main_layout.addWidget(search_mode_group)
         
@@ -138,22 +147,28 @@ class SearchPanel(QWidget):
         
         auto_search_layout.addLayout(file_layout)
         
-        # Similarity threshold
-        threshold_layout = QHBoxLayout()
-        threshold_layout.addWidget(QLabel("Similarity Threshold:"))
+        # Similarity threshold (only for standard auto search)
+        self.threshold_layout = QHBoxLayout()
+        self.threshold_layout.addWidget(QLabel("Similarity Threshold:"))
         
         self.threshold_slider = QSlider(Qt.Horizontal)
         self.threshold_slider.setRange(0, 100)
         self.threshold_slider.setValue(75)
         self.threshold_slider.setTickPosition(QSlider.TicksBelow)
         self.threshold_slider.setTickInterval(10)
-        threshold_layout.addWidget(self.threshold_slider)
+        self.threshold_layout.addWidget(self.threshold_slider)
         
         self.threshold_label = QLabel("75%")
         self.threshold_slider.valueChanged.connect(self._update_threshold_label)
-        threshold_layout.addWidget(self.threshold_label)
+        self.threshold_layout.addWidget(self.threshold_label)
         
-        auto_search_layout.addLayout(threshold_layout)
+        auto_search_layout.addLayout(self.threshold_layout)
+        
+        # Search algorithm info
+        self.algorithm_info_label = QLabel("")
+        self.algorithm_info_label.setWordWrap(True)
+        self.algorithm_info_label.setStyleSheet("color: #666; font-style: italic; margin: 5px 0;")
+        auto_search_layout.addWidget(self.algorithm_info_label)
         
         # Process button
         process_button_layout = QHBoxLayout()
@@ -171,7 +186,7 @@ class SearchPanel(QWidget):
         separator.setFrameShadow(QFrame.Sunken)
         main_layout.addWidget(separator)
         
-        # Create log console section with proper parent reference
+        # Create log console section
         log_section = QWidget(self)
         log_layout = QVBoxLayout(log_section)
         
@@ -183,25 +198,50 @@ class SearchPanel(QWidget):
         log_header.addStretch()
         log_layout.addLayout(log_header)
         
-        # Create log console with proper parent
+        # Create log console
         self.log_console = LogConsole(log_section)
         log_layout.addWidget(self.log_console)
         
         # Add log section to main layout
         main_layout.addWidget(log_section)
         
-        # Log initial message using the logger
-        logger = get_logger()
-        logger.info("Search panel initialized. Ready for search queries.")
+        # Log initial message
+        logger.info("Enhanced search panel initialized with optimized matcher support")
         
         # Set initial state
         self.toggle_search_mode()
     
     def toggle_search_mode(self):
-        """Toggle between manual and automatic search modes."""
+        """Toggle between manual, automatic, and enhanced automatic search modes."""
         manual_mode = self.manual_search_radio.isChecked()
+        auto_mode = self.auto_search_radio.isChecked() or self.enhanced_auto_search_radio.isChecked()
+        enhanced_mode = self.enhanced_auto_search_radio.isChecked()
+        
         self.manual_search_group.setVisible(manual_mode)
-        self.auto_search_group.setVisible(not manual_mode)
+        self.auto_search_group.setVisible(auto_mode)
+        
+        # Update algorithm info and threshold visibility
+        if enhanced_mode:
+            self.algorithm_info_label.setText(
+                "🎵 Enhanced Algorithm: Optimized for electronic music with advanced remix detection,\n"
+                "multi-artist handling, and format quality ranking. Uses fixed thresholds for consistency."
+            )
+            # Hide threshold slider for enhanced mode (it uses fixed optimized thresholds)
+            for i in range(self.threshold_layout.count()):
+                item = self.threshold_layout.itemAt(i)
+                if item.widget():
+                    item.widget().setVisible(False)
+        elif auto_mode:
+            self.algorithm_info_label.setText(
+                "🔍 Standard Algorithm: General-purpose fuzzy matching with configurable threshold."
+            )
+            # Show threshold slider for standard auto search
+            for i in range(self.threshold_layout.count()):
+                item = self.threshold_layout.itemAt(i)
+                if item.widget():
+                    item.widget().setVisible(True)
+        else:
+            self.algorithm_info_label.setText("")
     
     def _update_threshold_label(self, value):
         """Update threshold label when slider value changes."""
@@ -281,15 +321,19 @@ class SearchPanel(QWidget):
             )
             return
         
-        # Create progress dialog (non-modal)
-        self.auto_progress = QProgressDialog("Processing match file...", "Cancel", 0, 100, self)
+        # Determine which algorithm to use
+        use_enhanced = self.enhanced_auto_search_radio.isChecked()
+        
+        # Create progress dialog
+        algorithm_name = "Enhanced" if use_enhanced else "Standard"
+        self.auto_progress = QProgressDialog(f"Processing with {algorithm_name} algorithm...", "Cancel", 0, 100, self)
         self.auto_progress.setWindowTitle("Processing")
         self.auto_progress.setWindowModality(Qt.NonModal)
         self.auto_progress.setMinimumDuration(0)
         self.auto_progress.setAutoClose(False)
         self.auto_progress.setAutoReset(False)
         
-        # Create a worker using Qt's thread pool
+        # Create worker using Qt's thread pool
         from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
         
         class AutoSearchWorker(QRunnable):
@@ -300,11 +344,12 @@ class SearchPanel(QWidget):
                 progress = pyqtSignal(float, str)
                 finished = pyqtSignal(list)
                 
-            def __init__(self, music_indexer, match_file):
+            def __init__(self, music_indexer, match_file, use_enhanced):
                 """Initialize the worker."""
                 super().__init__()
                 self.music_indexer = music_indexer
                 self.match_file = match_file
+                self.use_enhanced = use_enhanced
                 self.signals = self.Signals()
                 self.cancelled = False
             
@@ -312,11 +357,17 @@ class SearchPanel(QWidget):
             def run(self):
                 """Run the worker."""
                 try:
-                    # Process match file
-                    results = self.music_indexer.process_match_file(
-                        self.match_file, 
-                        show_progress=False
-                    )
+                    if self.use_enhanced:
+                        # Use optimized matcher
+                        from ..search.optimized_matcher import OptimizedMatcher
+                        matcher = OptimizedMatcher(self.music_indexer.cache_manager)
+                        results = matcher.process_match_file(self.match_file, show_progress=False)
+                    else:
+                        # Use standard auto search
+                        results = self.music_indexer.process_match_file(
+                            self.match_file, 
+                            show_progress=False
+                        )
                     
                     # Emit finished signal with results
                     self.signals.finished.emit(results)
@@ -328,7 +379,7 @@ class SearchPanel(QWidget):
                     self.signals.finished.emit([])
         
         # Create worker
-        worker = AutoSearchWorker(self.music_indexer, match_file)
+        worker = AutoSearchWorker(self.music_indexer, match_file, use_enhanced)
         
         # Connect signals
         worker.signals.finished.connect(self.auto_search_completed)
@@ -341,6 +392,10 @@ class SearchPanel(QWidget):
         
         # Show the dialog after starting the thread
         self.auto_progress.show()
+        
+        # Log which algorithm is being used
+        algorithm_name = "Enhanced (Optimized)" if use_enhanced else "Standard"
+        logger.info(f"Starting {algorithm_name} automatic search: {match_file}")
 
     def auto_search_completed(self, results):
         """Handle automatic search completion."""
@@ -348,8 +403,10 @@ class SearchPanel(QWidget):
         if hasattr(self, 'auto_progress') and self.auto_progress:
             self.auto_progress.close()
         
+        algorithm_name = "Enhanced" if self.enhanced_auto_search_radio.isChecked() else "Standard"
+        
         if results:
-            # Emit results directly - now our ResultsPanel knows how to handle this format
+            # Emit results directly
             self.search_completed.emit(results)
             
             # Count matches
@@ -357,23 +414,54 @@ class SearchPanel(QWidget):
             missing_entries = sum(1 for result in results if not result.get('matches', []))
             
             logger.info(
-                f"Automatic search completed: processed {len(results)} entries, "
+                f"{algorithm_name} automatic search completed: processed {len(results)} entries, "
                 f"found {total_matches} matches, {missing_entries} entries with no matches"
             )
             
-            # Show summary
-            QMessageBox.information(
-                self,
-                "Processing Complete",
-                f"Processed {len(results)} entries from match file.\n"
-                f"Found {total_matches} matching files.\n"
-                f"Entries with no matches: {missing_entries}"
-            )
+            # Show enhanced summary for optimized matcher
+            if self.enhanced_auto_search_radio.isChecked():
+                # Calculate additional statistics for enhanced algorithm
+                perfect_matches = 0
+                high_quality_matches = 0
+                
+                for result in results:
+                    matches = result.get('matches', [])
+                    if matches:
+                        best_match = matches[0]
+                        score = best_match.get('match_score', 0)
+                        strategy = best_match.get('strategy', '')
+                        
+                        if 'perfect_remix_match' in strategy:
+                            perfect_matches += 1
+                        elif score >= 90:
+                            high_quality_matches += 1
+                
+                QMessageBox.information(
+                    self,
+                    "Enhanced Processing Complete",
+                    f"🎵 Enhanced Algorithm Results:\n\n"
+                    f"📊 Processed: {len(results)} entries\n"
+                    f"✅ Found matches: {len(results) - missing_entries}\n"
+                    f"🎯 Perfect remix matches: {perfect_matches}\n"
+                    f"⭐ High quality matches (90%+): {high_quality_matches}\n"
+                    f"❌ Missing entries: {missing_entries}\n\n"
+                    f"🔧 The enhanced algorithm provides better ranking\n"
+                    f"for electronic music with remix information."
+                )
+            else:
+                # Standard summary
+                QMessageBox.information(
+                    self,
+                    "Processing Complete",
+                    f"Processed {len(results)} entries from match file.\n"
+                    f"Found {total_matches} matching files.\n"
+                    f"Entries with no matches: {missing_entries}"
+                )
         else:
             QMessageBox.warning(
                 self,
                 "Processing Failed",
-                "Failed to process match file. Check logs for details."
+                f"{algorithm_name} processing failed. Check logs for details."
             )
     
     def load_settings(self):
@@ -381,7 +469,10 @@ class SearchPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Load search mode
-        if settings.value("search/auto_mode", False, type=bool):
+        search_mode = settings.value("search/mode", "manual")
+        if search_mode == "enhanced_auto":
+            self.enhanced_auto_search_radio.setChecked(True)
+        elif search_mode == "auto":
             self.auto_search_radio.setChecked(True)
         else:
             self.manual_search_radio.setChecked(True)
@@ -404,7 +495,13 @@ class SearchPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Save search mode
-        settings.setValue("search/auto_mode", self.auto_search_radio.isChecked())
+        if self.enhanced_auto_search_radio.isChecked():
+            search_mode = "enhanced_auto"
+        elif self.auto_search_radio.isChecked():
+            search_mode = "auto"
+        else:
+            search_mode = "manual"
+        settings.setValue("search/mode", search_mode)
         
         # Save threshold
         settings.setValue("search/threshold", self.threshold_slider.value())
@@ -421,3 +518,4 @@ class SearchPanel(QWidget):
         """Handle panel close event."""
         self.save_settings()
         super().closeEvent(event)
+                        
