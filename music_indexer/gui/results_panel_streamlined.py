@@ -122,9 +122,9 @@ class StreamlinedResultsPanel(QWidget):
         
         # Create results tree with streamlined view
         self.results_tree = QTreeWidget()
-        self.results_tree.setColumnCount(7)
+        self.results_tree.setColumnCount(8)
         self.results_tree.setHeaderLabels([
-            "☐", "Search Entry", "Best Match", "Format", "Duration", "Bitrate", "Score"
+            "☐", "Original Search", "Best Match", "Format", "Duration", "Bitrate", "Score", "Playlist Entry"
         ])
         
         # Set tree properties
@@ -142,17 +142,19 @@ class StreamlinedResultsPanel(QWidget):
         # Set column properties for better usability
         header = self.results_tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Checkbox column
-        header.setSectionResizeMode(1, QHeaderView.Interactive)       # Search Entry
+        header.setSectionResizeMode(1, QHeaderView.Interactive)       # Original Search
         header.setSectionResizeMode(2, QHeaderView.Stretch)           # Best Match (main column)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Format
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Duration
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Bitrate
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Score
+        header.setSectionResizeMode(7, QHeaderView.Interactive)       # Track Name
         
         # Set minimum column widths
         header.setMinimumSectionSize(80)
-        self.results_tree.setColumnWidth(1, 200)  # Search Entry
+        self.results_tree.setColumnWidth(1, 200)  # Original Search
         self.results_tree.setColumnWidth(2, 300)  # Best Match
+        self.results_tree.setColumnWidth(7, 200)  # Track Name
         
         # Make header clickable for sorting
         header.sectionClicked.connect(self.on_header_clicked)
@@ -271,6 +273,10 @@ class StreamlinedResultsPanel(QWidget):
         
         # Score
         item.setText(6, f"{score:.1f}%")
+        
+        # Track Name (extracted title from search)
+        search_title = match.get('search_title', match.get('original_line', ''))
+        item.setText(7, search_title)
         
         # Color code match score
         if score >= 90:
@@ -458,11 +464,13 @@ class StreamlinedResultsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(0, Qt.Unchecked)
             
-            # Set search entry text
-            search_entry = line
+            # Set search entry text and track name from original text file
+            search_entry = line  # This is the full original line from text file
+            original_track_name = line  # Show the exact line from the text file
             if artist and title:
                 search_entry = f"{artist} - {title}"
             item.setText(1, search_entry)
+            item.setText(7, original_track_name)  # Show original line from text file
             
             if match_count == 0:
                 # No matches
@@ -481,6 +489,12 @@ class StreamlinedResultsPanel(QWidget):
                 
                 # Update tree item with best match info
                 self.update_tree_item_from_match(item, best_match)
+                
+                # Add search title to match data for display (use original line from text file)
+                enhanced_match = best_match.copy()
+                enhanced_match['search_title'] = line  # Use the exact original line from text file
+                enhanced_match['original_line'] = line  # Store original line as well
+                self.update_tree_item_from_match(item, enhanced_match)
                 
                 # Store match data
                 item.setData(0, Qt.UserRole + 1, best_match.get('file_path', ''))
@@ -542,7 +556,7 @@ class StreamlinedResultsPanel(QWidget):
             item.setData(0, Qt.UserRole + 3, [result])  # Single match
             
             # Set display data
-            item.setText(1, "Manual Search")  # Search entry
+            item.setText(1, "Manual Search")  # Original search
             item.setText(2, filename)  # Best match
             item.setText(3, result.get('format', '').upper())
             
@@ -560,6 +574,9 @@ class StreamlinedResultsPanel(QWidget):
             # Match score
             score = result.get('combined_score', 0)
             item.setText(6, f"{score:.1f}%")
+            
+            # Track name (for manual search, show "Manual Search" since there's no text file)
+            item.setText(7, "Manual Search")
             
             # Color code match score
             if score >= 90:
@@ -1002,39 +1019,41 @@ class StreamlinedResultsPanel(QWidget):
             with open(file_path, 'w', encoding='utf-8') as file:
                 if self.is_auto_search:
                     # Export streamlined results with selection status
-                    file.write("Selected,Search Entry,Best Match Filename,Format,Duration,Bitrate,Match Score,Total Matches,File Path\n")
+                    file.write("Selected,Original Search,Best Match Filename,Format,Duration,Bitrate,Match Score,Total Matches,Track Name,File Path\n")
                     
                     for i in range(self.results_tree.topLevelItemCount()):
                         item = self.results_tree.topLevelItem(i)
-                        search_entry = item.text(1)
+                        original_search = item.text(1)
                         best_match_filename = item.text(2)
                         format_type = item.text(3)
                         duration = item.text(4)
                         bitrate = item.text(5)
                         score = item.text(6)
+                        track_name = item.text(7)
                         file_path_item = item.data(0, Qt.UserRole + 1)
                         matches = item.data(0, Qt.UserRole + 3) or []
                         
                         selected = "Yes" if file_path_item in self.auto_selected_files else "No"
                         
-                        file.write(f'"{selected}","{search_entry}","{best_match_filename}","{format_type}","{duration}","{bitrate}","{score}",{len(matches)},"{file_path_item}"\n')
+                        file.write(f'"{selected}","{original_search}","{best_match_filename}","{format_type}","{duration}","{bitrate}","{score}",{len(matches)},"{track_name}","{file_path_item}"\n')
                 else:
                     # Export flat results
-                    file.write("Selected,Search Entry,Filename,Format,Duration,Bitrate,Match Score,File Path\n")
+                    file.write("Selected,Original Search,Filename,Format,Duration,Bitrate,Match Score,Track Name,File Path\n")
                     
                     for i in range(self.results_tree.topLevelItemCount()):
                         item = self.results_tree.topLevelItem(i)
-                        search_entry = item.text(1)
+                        original_search = item.text(1)
                         filename = item.text(2)
                         format_type = item.text(3)
                         duration = item.text(4)
                         bitrate = item.text(5)
                         score = item.text(6)
+                        track_name = item.text(7)
                         file_path_item = item.data(0, Qt.UserRole + 1)
                         
                         selected = "Yes" if file_path_item in self.auto_selected_files else "No"
                         
-                        file.write(f'"{selected}","{search_entry}","{filename}","{format_type}","{duration}","{bitrate}","{score}","{file_path_item}"\n')
+                        file.write(f'"{selected}","{original_search}","{filename}","{format_type}","{duration}","{bitrate}","{score}","{track_name}","{file_path_item}"\n')
             
             QMessageBox.information(
                 self,
@@ -1066,7 +1085,7 @@ class StreamlinedResultsPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Load column widths
-        for i in range(7):  # 7 columns now
+        for i in range(8):  # 8 columns now
             width = settings.value(f"results/column_width_{i}", 0, type=int)
             if width > 0:
                 self.results_tree.setColumnWidth(i, width)
@@ -1081,7 +1100,7 @@ class StreamlinedResultsPanel(QWidget):
         settings = QSettings("MusicIndexer", "MusicIndexer")
         
         # Save column widths
-        for i in range(7):  # 7 columns now
+        for i in range(8):  # 8 columns now
             settings.setValue(f"results/column_width_{i}", self.results_tree.columnWidth(i))
         
         # Save sort settings
