@@ -1,5 +1,6 @@
 """
 Enhanced search panel GUI with optimized matcher option for the music indexer application.
+Updated to use app root as default directory for browse buttons.
 """
 import os
 import logging
@@ -36,6 +37,27 @@ class SearchPanel(QWidget):
         self.load_settings()
         
         logger.info("Enhanced search panel with optimized matcher initialized")
+    
+    def get_app_root_directory(self):
+        """
+        Get the app root directory (where main.py is located).
+        
+        Returns:
+            str: Path to app root directory
+        """
+        # Get the directory where main.py is located
+        # Since we're in music_indexer/gui/search_panel.py, we need to go up 2 levels
+        current_file = os.path.abspath(__file__)
+        app_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+        
+        # Verify that main.py exists in this directory
+        main_py_path = os.path.join(app_root, "main.py")
+        if os.path.exists(main_py_path):
+            return app_root
+        else:
+            # Fallback to current working directory if main.py not found
+            logger.warning(f"main.py not found at {main_py_path}, using current working directory")
+            return os.getcwd()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -249,16 +271,32 @@ class SearchPanel(QWidget):
         self.music_indexer.set_similarity_threshold(value)
     
     def browse_match_file(self):
-        """Browse for a match file."""
+        """Browse for a match file using app root as default directory."""
+        # Get app root directory as default
+        default_dir = self.get_app_root_directory()
+        
+        # Try to get a more specific default from config if available
+        config_default = ""
+        try:
+            config_default = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+            if config_default and os.path.exists(config_default):
+                default_dir = config_default
+        except:
+            # If config access fails, stick with app root
+            pass
+        
+        logger.info(f"Using default directory for file browse: {default_dir}")
+        
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Match File",
-            os.path.expanduser("~"),
+            default_dir,
             "Text Files (*.txt);;All Files (*.*)"
         )
         
         if file_path:
             self.file_input.setText(file_path)
+            logger.info(f"Selected match file: {file_path}")
     
     def perform_manual_search(self):
         """Perform manual search."""
@@ -481,10 +519,14 @@ class SearchPanel(QWidget):
         threshold = settings.value("search/threshold", 75, type=int)
         self.threshold_slider.setValue(threshold)
         
-        # Load match file
+        # Load match file - check app root first for default
         match_file = settings.value("search/match_file", "")
         if match_file and os.path.exists(match_file):
             self.file_input.setText(match_file)
+        else:
+            # If no saved file or file doesn't exist, don't set anything
+            # Let the user browse from app root
+            pass
         
         # Load exact match
         exact_match = settings.value("search/exact_match", False, type=bool)
@@ -518,4 +560,3 @@ class SearchPanel(QWidget):
         """Handle panel close event."""
         self.save_settings()
         super().closeEvent(event)
-                        

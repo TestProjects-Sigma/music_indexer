@@ -124,7 +124,7 @@ class StreamlinedResultsPanel(QWidget):
         self.results_tree = QTreeWidget()
         self.results_tree.setColumnCount(8)
         self.results_tree.setHeaderLabels([
-            "☐", "Playlist Entry", "Original Search", "Best Match", "Format", "Duration", "Bitrate", "Score"
+            "☐", "Original Search", "Best Match", "Format", "Duration", "Bitrate", "Score", "From TXT File"
         ])
         
         # Set tree properties
@@ -206,6 +206,29 @@ class StreamlinedResultsPanel(QWidget):
         
         # Connect signals
         self.results_tree.itemSelectionChanged.connect(self.update_button_states)
+
+    def copy_selected_files(self):
+        """Copy all selected files to destination folder."""
+        if not self.auto_selected_files:
+            QMessageBox.warning(self, "No Selection", "No files are selected for copying.")
+            return
+        
+        # Use app root directory as default
+        default_dir = self.get_app_root_directory()
+        
+        # Get destination folder
+        destination = QFileDialog.getExistingDirectory(
+            self,
+            "Select Destination Folder", 
+            default_dir,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not destination:
+            return
+        
+        # Copy the selected files
+        self.copy_files_to_destination(list(self.auto_selected_files), destination)
     
     def on_header_clicked(self, logical_index):
         """Handle header clicks for sorting."""
@@ -617,7 +640,26 @@ class StreamlinedResultsPanel(QWidget):
         """Get file paths of selected (checked) items."""
         return list(self.auto_selected_files)
     
-    def copy_selected_files(self):
+    def get_app_root_directory(self):
+        """Get the application root directory (where main.py is located)."""
+        try:
+            # Get the directory where the main module is located
+            import __main__
+            if hasattr(__main__, '__file__'):
+                app_root = os.path.dirname(os.path.abspath(__main__.__file__))
+            else:
+                # Fallback: use current working directory
+                app_root = os.getcwd()
+            
+            # Ensure the directory exists
+            if os.path.exists(app_root):
+                return app_root
+            else:
+                # Fallback to user home if app root doesn't exist
+                return os.path.expanduser("~")
+        except Exception as e:
+            logger.warning(f"Could not determine app root directory: {str(e)}")
+            return os.path.expanduser("~")
         """Copy all selected files to destination folder."""
         if not self.auto_selected_files:
             QMessageBox.warning(self, "No Selection", "No files are selected for copying.")
@@ -914,10 +956,8 @@ class StreamlinedResultsPanel(QWidget):
             )
             return
         
-        # Get default export directory
-        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
-        if not default_dir or not os.path.exists(default_dir):
-            default_dir = os.path.expanduser("~")
+        # Use app root directory as default
+        default_dir = self.get_app_root_directory()
         
         # Generate default filename
         from datetime import datetime
@@ -999,10 +1039,8 @@ class StreamlinedResultsPanel(QWidget):
         if self.results_tree.topLevelItemCount() == 0:
             return
         
-        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
-        if not default_dir or not os.path.exists(default_dir):
-            default_dir = os.path.expanduser("~")
-        
+        # Use app root directory as default
+        default_dir = self.get_app_root_directory()
         default_path = os.path.join(default_dir, "music_search_results.csv")
         
         file_path, _ = QFileDialog.getSaveFileName(

@@ -14,7 +14,7 @@ DEFAULT_CONFIG = {
     },
     "paths": {
         "music_directories": [],
-        "default_export_directory": "",
+        "default_export_directory": "./",
     },
     "indexing": {
         "supported_formats": ["mp3", "flac", "m4a", "aac", "wav"],

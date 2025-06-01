@@ -1,5 +1,6 @@
 """
 Enhanced settings panel GUI with auto-selection preferences for the music indexer application.
+Updated to use app root as default directory for browse buttons.
 """
 import os
 from PyQt5.QtWidgets import (
@@ -31,6 +32,27 @@ class SettingsPanel(QWidget):
         self.load_settings()
         
         logger.info("Enhanced settings panel initialized")
+    
+    def get_app_root_directory(self):
+        """
+        Get the app root directory (where main.py is located).
+        
+        Returns:
+            str: Path to app root directory
+        """
+        # Get the directory where main.py is located
+        # Since we're in music_indexer/gui/settings_panel.py, we need to go up 2 levels
+        current_file = os.path.abspath(__file__)
+        app_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+        
+        # Verify that main.py exists in this directory
+        main_py_path = os.path.join(app_root, "main.py")
+        if os.path.exists(main_py_path):
+            return app_root
+        else:
+            # Fallback to current working directory if main.py not found
+            logger.warning(f"main.py not found at {main_py_path}, using current working directory")
+            return os.getcwd()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -296,16 +318,27 @@ class SettingsPanel(QWidget):
             self.format_preference_list.addItem(item)
 
     def browse_export_directory(self):
-        """Browse for default export directory."""
+        """Browse for default export directory using app root as default."""
+        # Get app root directory as default
+        default_dir = self.get_app_root_directory()
+        
+        # If there's already a directory set, use that as the starting point
+        current_dir = self.export_dir_input.text().strip()
+        if current_dir and os.path.exists(current_dir):
+            default_dir = current_dir
+        
+        logger.info(f"Using default directory for export browse: {default_dir}")
+        
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select Default Export Directory",
-            os.path.expanduser("~"),
+            default_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         
         if directory:
             self.export_dir_input.setText(directory)
+            logger.info(f"Selected export directory: {directory}")
     
     def _update_threshold_label(self, value):
         """Update threshold label when slider value changes."""
@@ -329,11 +362,16 @@ class SettingsPanel(QWidget):
         self._update_dir_buttons()
     
     def add_directory(self):
-        """Add a music directory."""
+        """Add a music directory using app root as default."""
+        # Get app root directory as default
+        default_dir = self.get_app_root_directory()
+        
+        logger.info(f"Using default directory for add directory browse: {default_dir}")
+        
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select Music Directory",
-            os.path.expanduser("~"),
+            default_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         
@@ -345,12 +383,14 @@ class SettingsPanel(QWidget):
                     "Directory Added",
                     f"Added directory: {directory}"
                 )
+                logger.info(f"Added music directory: {directory}")
             else:
                 QMessageBox.warning(
                     self,
                     "Failed to Add Directory",
                     f"Failed to add directory: {directory}"
                 )
+                logger.warning(f"Failed to add music directory: {directory}")
     
     def remove_directory(self):
         """Remove selected music directory."""
@@ -372,12 +412,14 @@ class SettingsPanel(QWidget):
         if reply == QMessageBox.Yes:
             if self.music_indexer.remove_music_directory(directory):
                 self.update_directory_list()
+                logger.info(f"Removed music directory: {directory}")
             else:
                 QMessageBox.warning(
                     self,
                     "Failed to Remove Directory",
                     f"Failed to remove directory: {directory}"
                 )
+                logger.warning(f"Failed to remove music directory: {directory}")
     
     def load_settings(self):
         """Load panel settings."""
