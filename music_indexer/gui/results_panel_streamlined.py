@@ -1,9 +1,11 @@
 """
-Enhanced results panel GUI with streamlined view, resizable columns, and sorting for the music indexer application.
+Enhanced results panel GUI with streamlined view, resizable columns, sorting, and save/load functionality for the music indexer application.
 """
 import os
 import sys
 import subprocess
+import json
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView,
@@ -70,7 +72,7 @@ class MatchDropdown(QComboBox):
 
 
 class StreamlinedResultsPanel(QWidget):
-    """Streamlined results panel with dropdown matches and enhanced functionality."""
+    """Streamlined results panel with dropdown matches, save/load functionality, and enhanced features."""
     
     def __init__(self, music_indexer):
         """Initialize the streamlined results panel."""
@@ -88,7 +90,28 @@ class StreamlinedResultsPanel(QWidget):
         # Load settings
         self.load_settings()
         
-        logger.info("Streamlined results panel initialized")
+        logger.info("Streamlined results panel with save/load functionality initialized")
+    
+    def get_app_root_directory(self):
+        """
+        Get the app root directory (where main.py is located).
+        
+        Returns:
+            str: Path to app root directory
+        """
+        # Get the directory where main.py is located
+        # Since we're in music_indexer/gui/results_panel_streamlined.py, we need to go up 2 levels
+        current_file = os.path.abspath(__file__)
+        app_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+        
+        # Verify that main.py exists in this directory
+        main_py_path = os.path.join(app_root, "main.py")
+        if os.path.exists(main_py_path):
+            return app_root
+        else:
+            # Fallback to current working directory if main.py not found
+            logger.warning(f"main.py not found at {main_py_path}, using current working directory")
+            return os.getcwd()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -124,7 +147,7 @@ class StreamlinedResultsPanel(QWidget):
         self.results_tree = QTreeWidget()
         self.results_tree.setColumnCount(8)
         self.results_tree.setHeaderLabels([
-            "☐", "Original Search", "Best Match", "Format", "Duration", "Bitrate", "Score", "From TXT File"
+            "☐", "Playlist Entry", "Original Search", "Best Match", "Format", "Duration", "Bitrate", "Score"
         ])
         
         # Set tree properties
@@ -182,6 +205,19 @@ class StreamlinedResultsPanel(QWidget):
         self.show_folder_button.setEnabled(False)
         button_layout.addWidget(self.show_folder_button)
         
+        # Add "Save Results" button
+        self.save_results_button = QPushButton("Save Results")
+        self.save_results_button.clicked.connect(self.save_auto_search_results)
+        self.save_results_button.setEnabled(False)
+        self.save_results_button.setToolTip("Save current auto search results to reload later")
+        button_layout.addWidget(self.save_results_button)
+        
+        # Add "Load Results" button  
+        self.load_results_button = QPushButton("Load Results")
+        self.load_results_button.clicked.connect(self.load_auto_search_results)
+        self.load_results_button.setToolTip("Load previously saved auto search results")
+        button_layout.addWidget(self.load_results_button)
+        
         # Add "Export Results" button
         self.export_button = QPushButton("Export Results")
         self.export_button.clicked.connect(self.export_results)
@@ -206,29 +242,217 @@ class StreamlinedResultsPanel(QWidget):
         
         # Connect signals
         self.results_tree.itemSelectionChanged.connect(self.update_button_states)
-
-    def copy_selected_files(self):
-        """Copy all selected files to destination folder."""
-        if not self.auto_selected_files:
-            QMessageBox.warning(self, "No Selection", "No files are selected for copying.")
+    
+    def save_auto_search_results(self):
+        """Save current auto search results to a file."""
+        if not self.grouped_results:
+            QMessageBox.information(
+                self,
+                "No Results to Save",
+                "No auto search results available to save."
+            )
             return
         
-        # Use app root directory as default
+        # Get app root directory as default
         default_dir = self.get_app_root_directory()
         
-        # Get destination folder
-        destination = QFileDialog.getExistingDirectory(
+        # Generate default filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        algorithm = "enhanced" if hasattr(self, 'is_enhanced_search') and getattr(self, 'is_enhanced_search', False) else "standard"
+        default_filename = f"autosearch_results_{algorithm}_{timestamp}.json"
+        default_path = os.path.join(default_dir, default_filename)
+        
+        # Get save path from user
+        file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Select Destination Folder", 
-            default_dir,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+            "Save Auto Search Results",
+            default_path,
+            "JSON Files (*.json);;All Files (*.*)"
         )
         
-        if not destination:
+        if not file_path:
             return
         
-        # Copy the selected files
-        self.copy_files_to_destination(list(self.auto_selected_files), destination)
+        try:
+            # Prepare data for saving
+            save_data = {
+                'metadata': {
+                    'created_at': datetime.now().isoformat(),
+                    'app_version': '0.1.0',  # You can get this from config
+                    'algorithm_used': algorithm,
+                    'total_entries': len(self.grouped_results),
+                    'entries_with_matches': sum(1 for r in self.grouped_results.values() if r.get('matches')),
+                    'total_matches': sum(len(r.get('matches', [])) for r in self.grouped_results.values()),
+                    'selected_files': list(self.auto_selected_files),
+                    'selected_count': len(self.auto_selected_files)
+                },
+                'grouped_results': self.grouped_results,
+                'auto_selected_files': list(self.auto_selected_files),
+                'search_settings': {
+                    'similarity_threshold': getattr(getattr(self.music_indexer, 'string_matcher', None), 'threshold', 75),
+                    'is_auto_search': getattr(self, 'is_auto_search', True),
+                    'algorithm': algorithm
+                }
+            }
+            
+            # Save to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=2, ensure_ascii=False)
+            
+            # Show success message
+            file_size = os.path.getsize(file_path)
+            file_size_kb = file_size / 1024
+            
+            QMessageBox.information(
+                self,
+                "Results Saved Successfully",
+                f"✅ Auto search results saved successfully!\n\n"
+                f"📁 File: {os.path.basename(file_path)}\n"
+                f"💾 Size: {file_size_kb:.1f} KB\n"
+                f"📊 Entries: {save_data['metadata']['total_entries']}\n"
+                f"🎯 Matches: {save_data['metadata']['total_matches']}\n"
+                f"✅ Selected: {save_data['metadata']['selected_count']}\n\n"
+                f"📍 Location: {file_path}"
+            )
+            
+            logger.info(f"Saved auto search results to: {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving auto search results: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Save Failed",
+                f"Failed to save auto search results:\n{str(e)}"
+            )
+    
+    def load_auto_search_results(self):
+        """Load auto search results from a file."""
+        # Get app root directory as default
+        default_dir = self.get_app_root_directory()
+        
+        # Get file path from user
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Auto Search Results",
+            default_dir,
+            "JSON Files (*.json);;All Files (*.*)"
+        )
+        
+        if not file_path:
+            return
+        
+        if not os.path.exists(file_path):
+            QMessageBox.warning(
+                self,
+                "File Not Found",
+                f"The selected file does not exist:\n{file_path}"
+            )
+            return
+        
+        try:
+            # Load data from file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                save_data = json.load(f)
+            
+            # Validate file format
+            if 'grouped_results' not in save_data or 'metadata' not in save_data:
+                QMessageBox.warning(
+                    self,
+                    "Invalid File Format",
+                    "The selected file does not appear to be a valid auto search results file."
+                )
+                return
+            
+            # Extract data
+            metadata = save_data['metadata']
+            grouped_results = save_data['grouped_results']
+            auto_selected_files = set(save_data.get('auto_selected_files', []))
+            search_settings = save_data.get('search_settings', {})
+            
+            # Validate that files still exist
+            missing_files = []
+            valid_selected_files = set()
+            
+            for file_path_check in auto_selected_files:
+                if os.path.exists(file_path_check):
+                    valid_selected_files.add(file_path_check)
+                else:
+                    missing_files.append(file_path_check)
+            
+            # Show confirmation dialog with file info
+            created_at = metadata.get('created_at', 'Unknown')
+            algorithm = metadata.get('algorithm_used', 'Unknown')
+            total_entries = metadata.get('total_entries', 0)
+            total_matches = metadata.get('total_matches', 0)
+            original_selected = metadata.get('selected_count', 0)
+            current_valid = len(valid_selected_files)
+            
+            confirm_text = f"📁 Load Auto Search Results\n\n"
+            confirm_text += f"📅 Created: {created_at}\n"
+            confirm_text += f"🔧 Algorithm: {algorithm.title()}\n"
+            confirm_text += f"📊 Entries: {total_entries}\n"
+            confirm_text += f"🎯 Total matches: {total_matches}\n"
+            confirm_text += f"✅ Originally selected: {original_selected}\n"
+            confirm_text += f"✅ Currently valid: {current_valid}\n"
+            
+            if missing_files:
+                confirm_text += f"⚠️ Missing files: {len(missing_files)}\n"
+            
+            confirm_text += f"\nLoad these results?"
+            
+            reply = QMessageBox.question(
+                self,
+                "Load Auto Search Results",
+                confirm_text,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # Load the results
+            self.grouped_results = grouped_results
+            self.auto_selected_files = valid_selected_files
+            self.is_auto_search = search_settings.get('is_auto_search', True)
+            
+            # Check if this was enhanced search
+            if algorithm == 'enhanced':
+                self.is_enhanced_search = True
+            
+            # Display the results
+            self.display_streamlined_results()
+            
+            # Show load completion message
+            success_text = f"✅ Results loaded successfully!\n\n"
+            success_text += f"📊 Loaded {total_entries} entries with {total_matches} matches\n"
+            success_text += f"✅ {current_valid} files selected\n"
+            
+            if missing_files:
+                success_text += f"\n⚠️ Note: {len(missing_files)} previously selected files are no longer available"
+            
+            QMessageBox.information(
+                self,
+                "Results Loaded Successfully",
+                success_text
+            )
+            
+            logger.info(f"Loaded auto search results from: {file_path}")
+            logger.info(f"Loaded {total_entries} entries, {current_valid} valid selections")
+            
+        except json.JSONDecodeError:
+            QMessageBox.warning(
+                self,
+                "Invalid File Format",
+                "The selected file is not a valid JSON file or is corrupted."
+            )
+        except Exception as e:
+            logger.error(f"Error loading auto search results: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Load Failed",
+                f"Failed to load auto search results:\n{str(e)}"
+            )
     
     def on_header_clicked(self, logical_index):
         """Handle header clicks for sorting."""
@@ -623,6 +847,7 @@ class StreamlinedResultsPanel(QWidget):
         has_results = self.results_tree.topLevelItemCount() > 0
         has_selections = len(self.auto_selected_files) > 0
         has_grouped_results = bool(self.grouped_results)
+        has_auto_search_results = has_grouped_results and getattr(self, 'is_auto_search', False)
         
         # Selection buttons
         self.auto_select_button.setEnabled(has_grouped_results)
@@ -635,31 +860,16 @@ class StreamlinedResultsPanel(QWidget):
         self.export_button.setEnabled(has_results)
         self.export_missing_button.setEnabled(has_grouped_results and self.has_missing_tracks())
         self.clear_button.setEnabled(has_results)
+        
+        # Save/Load buttons
+        self.save_results_button.setEnabled(has_auto_search_results)
+        # Load button is always enabled (no need to set it)
     
     def get_selected_file_paths(self):
         """Get file paths of selected (checked) items."""
         return list(self.auto_selected_files)
     
-    def get_app_root_directory(self):
-        """Get the application root directory (where main.py is located)."""
-        try:
-            # Get the directory where the main module is located
-            import __main__
-            if hasattr(__main__, '__file__'):
-                app_root = os.path.dirname(os.path.abspath(__main__.__file__))
-            else:
-                # Fallback: use current working directory
-                app_root = os.getcwd()
-            
-            # Ensure the directory exists
-            if os.path.exists(app_root):
-                return app_root
-            else:
-                # Fallback to user home if app root doesn't exist
-                return os.path.expanduser("~")
-        except Exception as e:
-            logger.warning(f"Could not determine app root directory: {str(e)}")
-            return os.path.expanduser("~")
+    def copy_selected_files(self):
         """Copy all selected files to destination folder."""
         if not self.auto_selected_files:
             QMessageBox.warning(self, "No Selection", "No files are selected for copying.")
@@ -668,7 +878,7 @@ class StreamlinedResultsPanel(QWidget):
         # Get default export directory from config
         default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
         if not default_dir or not os.path.exists(default_dir):
-            default_dir = os.path.expanduser("~")
+            default_dir = self.get_app_root_directory()
         
         # Get destination folder
         destination = QFileDialog.getExistingDirectory(
@@ -836,6 +1046,16 @@ class StreamlinedResultsPanel(QWidget):
             export_missing_action = context_menu.addAction("Export Missing Tracks")
             export_missing_action.triggered.connect(self.export_missing_tracks)
         
+        # Add save/load options to context menu
+        if self.grouped_results and getattr(self, 'is_auto_search', False):
+            context_menu.addSeparator()
+            
+            save_action = context_menu.addAction("Save Auto Search Results")
+            save_action.triggered.connect(self.save_auto_search_results)
+            
+            load_action = context_menu.addAction("Load Auto Search Results")  
+            load_action.triggered.connect(self.load_auto_search_results)
+        
         clear_action = context_menu.addAction("Clear Results")
         clear_action.triggered.connect(self.clear_results)
         
@@ -956,11 +1176,12 @@ class StreamlinedResultsPanel(QWidget):
             )
             return
         
-        # Use app root directory as default
-        default_dir = self.get_app_root_directory()
+        # Get default export directory
+        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        if not default_dir or not os.path.exists(default_dir):
+            default_dir = self.get_app_root_directory()
         
         # Generate default filename
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f"missing_tracks_{timestamp}.txt"
         default_path = os.path.join(default_dir, default_filename)
@@ -1039,8 +1260,10 @@ class StreamlinedResultsPanel(QWidget):
         if self.results_tree.topLevelItemCount() == 0:
             return
         
-        # Use app root directory as default
-        default_dir = self.get_app_root_directory()
+        default_dir = self.music_indexer.config_manager.get("paths", "default_export_directory", "")
+        if not default_dir or not os.path.exists(default_dir):
+            default_dir = self.get_app_root_directory()
+        
         default_path = os.path.join(default_dir, "music_search_results.csv")
         
         file_path, _ = QFileDialog.getSaveFileName(
@@ -1055,7 +1278,7 @@ class StreamlinedResultsPanel(QWidget):
         
         try:
             with open(file_path, 'w', encoding='utf-8') as file:
-                if self.is_auto_search:
+                if getattr(self, 'is_auto_search', False):
                     # Export streamlined results with selection status
                     file.write("Selected,Playlist Entry,Original Search,Best Match Filename,Format,Duration,Bitrate,Match Score,Total Matches,File Path\n")
                     
