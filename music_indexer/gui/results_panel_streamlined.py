@@ -505,7 +505,10 @@ class StreamlinedResultsPanel(QWidget):
         bitrate = match.get('bitrate', 0)
         score = match.get('combined_score', 0)
         
-        # Update tree item columns
+        # IMPORTANT: Only update the Best Match column and onwards
+        # DO NOT update columns 1 (Playlist Entry) and 2 (Original Search)
+        # as these should preserve the original search information
+        
         item.setText(3, filename)  # Best Match column
         item.setText(4, format_type.upper())  # Format
         
@@ -520,10 +523,6 @@ class StreamlinedResultsPanel(QWidget):
         
         # Score
         item.setText(7, f"{score:.1f}%")
-        
-        # Playlist Entry (extracted title from search) - keep this preserved
-        search_title = match.get('search_title', match.get('original_line', ''))
-        item.setText(1, search_title)
         
         # Color code match score
         if score >= 90:
