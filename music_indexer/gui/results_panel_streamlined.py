@@ -475,14 +475,14 @@ class StreamlinedResultsPanel(QWidget):
         """Handle match dropdown selection changes."""
         if not new_match:
             return
-        
+
         # Update the displayed information in the tree item
         self.update_tree_item_from_match(item, new_match)
-        
+
         # Update file path in user data
         file_path = new_match.get('file_path', '')
         old_file_path = item.data(0, Qt.UserRole + 1)
-        
+
         if old_file_path != file_path:
             # Remove old selection if it was selected
             if old_file_path in self.auto_selected_files:
@@ -490,12 +490,60 @@ class StreamlinedResultsPanel(QWidget):
                 # Keep the item checked and update to new file path
                 if item.checkState(0) == Qt.Checked:
                     self.auto_selected_files.add(file_path)
-            
+
             # Update stored file path
             item.setData(0, Qt.UserRole + 1, file_path)
             item.setData(0, Qt.UserRole + 2, new_match)  # Store full match data
-            
+
+            # CRITICAL FIX: Update the grouped_results data structure
+            # Find the corresponding entry in grouped_results and update it
+            self.update_grouped_results_selection(item, new_match)
+
             self.update_selection_summary()
+
+    def update_grouped_results_selection(self, item, new_match):
+        """
+        Update the grouped_results data structure when a match selection changes.
+        This ensures that saves/loads work correctly with current selections.
+        """
+        try:
+            # Get the original playlist line from the item
+            playlist_entry = item.text(1)  # Column 1 is the playlist entry
+            
+            # Find the matching entry in grouped_results
+            for key, group_data in self.grouped_results.items():
+                if group_data.get('line') == playlist_entry:
+                    # Found the matching group - now reorder the matches to put the selected one first
+                    matches = group_data.get('matches', [])
+                    selected_file_path = new_match.get('file_path', '')
+                    
+                    # Find the selected match in the matches list
+                    selected_match_index = -1
+                    for i, match in enumerate(matches):
+                        if match.get('file_path') == selected_file_path:
+                            selected_match_index = i
+                            break
+                    
+                    if selected_match_index >= 0:
+                        # Move the selected match to the front of the list
+                        selected_match = matches.pop(selected_match_index)
+                        matches.insert(0, selected_match)
+                        
+                        # Update the grouped_results
+                        group_data['matches'] = matches
+                        
+                        logger.debug(f"Updated grouped_results: moved match '{new_match.get('filename', 'unknown')}' to position 0 for entry '{playlist_entry}'")
+                        break
+                    else:
+                        logger.warning(f"Could not find selected match in grouped_results for '{playlist_entry}'")
+                    break
+            else:
+                logger.warning(f"Could not find playlist entry '{playlist_entry}' in grouped_results")
+                
+        except Exception as e:
+            logger.error(f"Error updating grouped_results selection: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def update_tree_item_from_match(self, item, match):
         """Update tree item display from match data."""
