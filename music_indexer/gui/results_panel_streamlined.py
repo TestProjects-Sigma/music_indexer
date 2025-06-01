@@ -163,21 +163,26 @@ class StreamlinedResultsPanel(QWidget):
         self.results_tree.sortByColumn(7, Qt.DescendingOrder)  # Sort by score descending
         
         # Set column properties for better usability
+        # Colmn options are: ResizeToContents, Interactive, Fixed, Stretch
         header = self.results_tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Checkbox column
         header.setSectionResizeMode(1, QHeaderView.Interactive)       # Playlist Entry
         header.setSectionResizeMode(2, QHeaderView.Interactive)       # Original Search
-        header.setSectionResizeMode(3, QHeaderView.Stretch)           # Best Match (main column)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Format
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Duration
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Bitrate
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Score
+        header.setSectionResizeMode(3, QHeaderView.Interactive)       # Best Match (main column)
+        header.setSectionResizeMode(4, QHeaderView.Interactive)       # Format
+        header.setSectionResizeMode(5, QHeaderView.Interactive)       # Duration
+        header.setSectionResizeMode(6, QHeaderView.Interactive)       # Bitrate
+        header.setSectionResizeMode(7, QHeaderView.Interactive)       # Score
         
         # Set minimum column widths
-        header.setMinimumSectionSize(80)
-        self.results_tree.setColumnWidth(1, 250)  # Playlist Entry
-        self.results_tree.setColumnWidth(2, 200)  # Original Search
-        self.results_tree.setColumnWidth(3, 300)  # Best Match
+        header.setMinimumSectionSize(60)
+        self.results_tree.setColumnWidth(1, 550)  # Playlist Entry (reduced from 250)
+        self.results_tree.setColumnWidth(2, 180)  # Original Search (reduced from 200)
+        self.results_tree.setColumnWidth(3, 680)  # Best Match (increased from 300)
+        self.results_tree.setColumnWidth(4, 60)   # Format (keep compact)
+        self.results_tree.setColumnWidth(5, 60)   # Duration (keep compact)
+        self.results_tree.setColumnWidth(6, 60)   # Bitrate (keep compact)
+        self.results_tree.setColumnWidth(7, 60)   # Score (reduced - was too wide)
         
         # Make header clickable for sorting
         header.sectionClicked.connect(self.on_header_clicked)
